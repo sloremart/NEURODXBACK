@@ -8,8 +8,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
-
-from .models import ArchivoFacturacion,Admisiones
+from rest_framework.decorators import api_view
+from django.http import FileResponse
+from .serializers import ArchivoFacturacionSerializer
+from django.http import Http404
+from .models import ArchivoFacturacion
+from .modelsFacturacion import Admisiones
 
 
 
@@ -64,27 +68,47 @@ class GeDocumentalView(APIView):
 # views.py
 
 
+from django.conf import settings
+import os
+
+# ...
+
 class ArchivoUploadView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def post(self, request, consecutivo, format=None):
+        print(f"Consecutivo recibido en la vista: {consecutivo}")
         try:
             with transaction.atomic():
                 # Obtener la admisión asociada al consecutivo
                 admision = Admisiones.objects.get(Consecutivo=consecutivo)
 
+                # Crear la carpeta con el nombre del número de admisión
+                folder_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
+                os.makedirs(folder_path, exist_ok=True)
+
                 # Obtener la lista de archivos desde la solicitud
                 archivos = request.FILES.getlist('files')
+                print("Archivos recibidos en la vista:", archivos)
                 archivos_guardados = []
 
                 for archivo in archivos:
-                    archivo_obj = ArchivoFacturacion(Admision=admision, RutaArchivo=archivo)
+                    # Construir la ruta del archivo dentro de la carpeta de la admisión
+                    archivo_path = os.path.join(folder_path, archivo.name)
+
+                    archivo_obj = ArchivoFacturacion(Admision=admision, Tipo='TipoArchivo', RutaArchivo=archivo_path)
                     try:
                         archivo_obj.save()
                         archivos_guardados.append({
                             "id": archivo_obj.IdArchivo,
                             "ruta": archivo_obj.RutaArchivo.url
                         })
+
+                        # Guardar el archivo físicamente en la nueva ruta
+                        with open(archivo_path, 'wb') as file:
+                            for chunk in archivo.chunks():
+                                file.write(chunk)
+
                     except IntegrityError as e:
                         return JsonResponse({
                             "success": False,
@@ -114,3 +138,50 @@ class ArchivoUploadView(APIView):
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
 
+
+
+
+
+
+############# cargar archivos ############################
+@api_view(['GET'])
+def archivos_por_admision(request, numero_admision):
+    try:
+        archivos = ArchivoFacturacion.objects.filter(NumeroAdmision=numero_admision)
+        serializer = ArchivoFacturacionSerializer(archivos, many=True)
+        
+        response_data = {
+            "success": True,
+            "detail": f"Archivos encontrados para la admisión con número {numero_admision}",
+            "data": serializer.data
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    except ArchivoFacturacion.DoesNotExist:
+        response_data = {
+            "success": False,
+            "detail": f"No se encontraron archivos para la admisión con número {numero_admision}",
+            "data": None
+        }
+
+        return Response(response_data, status=status.HTTP_404_NOT_FOUND)
+    
+
+@api_view(['GET'])
+def donwloadFile(request, id_archivo):
+    try:
+        # Buscar el archivo por id
+        archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
+
+        # Construir la ruta completa del archivo
+        archivo_path = os.path.join(settings.MEDIA_ROOT, str(archivo.RutaArchivo))
+
+        # Verificar si el archivo realmente existe
+        if not os.path.exists(archivo_path):
+            raise Http404("El archivo no existe")
+
+        # Devolver el archivo como respuesta
+        return FileResponse(open(archivo_path, 'rb'))
+    except ArchivoFacturacion.DoesNotExist:
+        raise Http404("El archivo no existe")

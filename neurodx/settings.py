@@ -37,9 +37,9 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'rest_framework.authtoken',
-    'neurodx',
-    'login',
+    'neurodx',    
     'gedocumental',
+    'login',
     'citas',
 
     
@@ -154,7 +154,7 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-MEDIA_ROOT = os.path.join(BASE_DIR, 'static', 'media')
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 

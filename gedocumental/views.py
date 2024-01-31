@@ -37,7 +37,7 @@ class GeDocumentalView(APIView):
                 cursor.execute(query_factura, [consecutivo])
                 factura_info = cursor.fetchone()
 
-                # Transformar la estructura de datos antes de enviar la respuesta
+                
                 transformed_data = {
                     'Consecutivo': admision_data[0],
                     'IdPaciente': admision_data[1],
@@ -71,7 +71,6 @@ class GeDocumentalView(APIView):
 from django.conf import settings
 import os
 
-# ...
 
 class ArchivoUploadView(APIView):
     parser_classes = (MultiPartParser, FormParser)
@@ -81,7 +80,7 @@ class ArchivoUploadView(APIView):
         try:
             with transaction.atomic():
                 # Obtener la admisión asociada al consecutivo
-                admision = Admisiones.objects.get(Consecutivo=consecutivo)
+                admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
                 # Crear la carpeta con el nombre del número de admisión
                 folder_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
@@ -96,8 +95,13 @@ class ArchivoUploadView(APIView):
                     # Construir la ruta del archivo dentro de la carpeta de la admisión
                     archivo_path = os.path.join(folder_path, archivo.name)
 
-                    archivo_obj = ArchivoFacturacion(Admision=admision, Tipo='TipoArchivo', RutaArchivo=archivo_path)
+                    archivo_obj = ArchivoFacturacion(
+                         Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
+                         Tipo='TipoArchivo',
+    RutaArchivo=archivo_path
+)
                     try:
+                        archivo_obj.NumeroAdmision = admision.Consecutivo 
                         archivo_obj.save()
                         archivos_guardados.append({
                             "id": archivo_obj.IdArchivo,
@@ -130,7 +134,7 @@ class ArchivoUploadView(APIView):
 
                 return JsonResponse(response_data, status=status.HTTP_201_CREATED)
 
-        except Admisiones.DoesNotExist:
+        except Admisiones.objects.using('datosipsndx').DoesNotExist:
             response_data = {
                 "success": False,
                 "detail": f"No se encontró la admisión con consecutivo {consecutivo}",
@@ -168,6 +172,9 @@ def archivos_por_admision(request, numero_admision):
         return Response(response_data, status=status.HTTP_404_NOT_FOUND)
     
 
+from django.shortcuts import redirect
+from django.http import FileResponse
+
 @api_view(['GET'])
 def donwloadFile(request, id_archivo):
     try:
@@ -181,7 +188,9 @@ def donwloadFile(request, id_archivo):
         if not os.path.exists(archivo_path):
             raise Http404("El archivo no existe")
 
-        # Devolver el archivo como respuesta
-        return FileResponse(open(archivo_path, 'rb'))
+        # Redireccionar la respuesta a una nueva ventana
+        response = FileResponse(open(archivo_path, 'rb'))
+        response['Content-Disposition'] = 'inline; filename=' + os.path.basename(archivo_path)
+        return response
     except ArchivoFacturacion.DoesNotExist:
         raise Http404("El archivo no existe")

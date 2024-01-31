@@ -5,14 +5,13 @@ from django.db import models
 from django.dispatch import receiver
 from django.db.models.signals import pre_delete
 
-from .modelsFacturacion import Admisiones
 
 
 
 
 class ArchivoFacturacion(models.Model):
     IdArchivo = models.AutoField(primary_key=True)
-    Admision = models.ForeignKey(Admisiones, on_delete=models.CASCADE)
+    Admision =  models.IntegerField() 
     Tipo = models.CharField(max_length=50)
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
     RutaArchivo = models.FileField(upload_to='GeDocumental/archivosFacturacion', max_length=255, blank=True, null=True)
@@ -21,7 +20,7 @@ class ArchivoFacturacion(models.Model):
 
     def save(self, *args, **kwargs):
         # Actualizar el número de admisión antes de guardar
-        self.NumeroAdmision = self.Admision.Consecutivo
+        #self.NumeroAdmision = self.Admision.Consecutivo
         if self.RutaArchivo:
             self.NombreArchivo = os.path.basename(self.RutaArchivo.name)
         super(ArchivoFacturacion, self).save(*args, **kwargs)
@@ -35,7 +34,7 @@ class ArchivoFacturacion(models.Model):
 
     class Meta:
         db_table = 'archivos'
-        managed = True
+        managed = True        
 
 @receiver(pre_delete, sender=ArchivoFacturacion)
 def delete_file_on_delete(sender, instance, **kwargs):

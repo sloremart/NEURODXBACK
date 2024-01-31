@@ -106,7 +106,7 @@ class Admisiones(models.Model):
         
         db_table = 'admisiones'
         managed = False
-
+        
 
 
 
@@ -194,3 +194,4 @@ class Factura(models.Model):
         
         db_table = 'facturas'
         managed = False
+        

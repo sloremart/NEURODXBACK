@@ -52,6 +52,7 @@ class Citas(models.Model):
         db_table = 'citas'
         app_label = 'datosipsndx'
         managed = False
+        
 
 class Pacientes(models.Model):
     NumeroPaciente = models.AutoField(primary_key=True)
@@ -125,3 +126,4 @@ class Pacientes(models.Model):
         db_table = 'pacientes'
         app_label = 'datosipsndx'
         managed = False
+        

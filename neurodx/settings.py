@@ -22,7 +22,7 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['192.168.1.178']
 
 
 # Application definition
@@ -86,27 +86,27 @@ WSGI_APPLICATION = 'neurodx.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': 'localhost',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root', 
+        'USER': 'antares',
+        'PASSWORD': 'dic2401', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
             
         },
     },
      'datosipsndx': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': 'localhost',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root',
+        'USER': 'antares',
+        'PASSWORD': 'dic2401',
         'NAME': 'datosipsndx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
         },
     },
 }

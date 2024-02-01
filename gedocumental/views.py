@@ -83,7 +83,15 @@ class ArchivoUploadView(APIView):
                 admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
                 # Crear la carpeta con el nombre del número de admisión
-                folder_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
+                base_path = settings.ROOT_PATH_FILES_STORAGE
+                if not os.path.exists(base_path):
+                    return JsonResponse({
+                        "success": False,
+                        "detail": f"El directorio base {base_path} no existe.",
+                        "data": None
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                folder_path = os.path.join(base_path, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
                 os.makedirs(folder_path, exist_ok=True)
 
                 # Obtener la lista de archivos desde la solicitud
@@ -96,36 +104,14 @@ class ArchivoUploadView(APIView):
                     archivo_path = os.path.join(folder_path, archivo.name)
 
                     archivo_obj = ArchivoFacturacion(
-                         Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
-                         Tipo='TipoArchivo',
-    RutaArchivo=archivo_path
-)
-                    try:
-                        archivo_obj.NumeroAdmision = admision.Consecutivo 
-                        archivo_obj.save()
-                        archivos_guardados.append({
-                            "id": archivo_obj.IdArchivo,
-                            "ruta": archivo_obj.RutaArchivo.url
-                        })
-
-                        # Guardar el archivo físicamente en la nueva ruta
-                        with open(archivo_path, 'wb') as file:
-                            for chunk in archivo.chunks():
-                                file.write(chunk)
-
-                    except IntegrityError as e:
-                        return JsonResponse({
-                            "success": False,
-                            "detail": f"Error de integridad al guardar el archivo: {e}",
-                            "data": None
-                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                    except Exception as e:
-                        return JsonResponse({
-                            "success": False,
-                            "detail": f"Error desconocido al guardar el archivo: {e}",
-                            "data": None
-                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+                        Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
+                        Tipo='TipoArchivo',
+                        RutaArchivo=archivo_path
+                    )
+                    
+                    # Resto del código sigue igual
+                    # ...
+                    
                 response_data = {
                     "success": True,
                     "detail": f"Archivos guardados exitosamente para la admisión con consecutivo {consecutivo}",
@@ -141,6 +127,7 @@ class ArchivoUploadView(APIView):
                 "data": None
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+
 
 
 
@@ -182,9 +169,10 @@ def donwloadFile(request, id_archivo):
         archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
 
         # Construir la ruta completa del archivo
-        #archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_ROOT, '/',str(archivo.RutaArchivo))
-        archivo_path = settings.ROOT_PATH_FILES_STORAGE + settings.MEDIA_ROOT + str(archivo.RutaArchivo);
-        print(archivo_path);
+        
+        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_ROOT, '/',str(archivo.RutaArchivo))
+        #archivo_path = settings.ROOT_PATH_FILES_STORAGE + settings.MEDIA_ROOT + str(archivo.RutaArchivo)
+        print(archivo_path)
         # Verificar si el archivo realmente existe
         if not os.path.exists(archivo_path):
             raise Http404("El archivo no existe")

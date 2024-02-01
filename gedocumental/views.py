@@ -11,7 +11,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from django.http import FileResponse
 
-from neurodx.neurodx.settings import ROOT_PATH_FILES_STORAGE
+from neurodx.settings import ROOT_PATH_FILES_STORAGE
 from .serializers import ArchivoFacturacionSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion

@@ -182,8 +182,9 @@ def donwloadFile(request, id_archivo):
         archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
 
         # Construir la ruta completa del archivo
-        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_URL, '/',str(archivo.RutaArchivo))
-
+        #archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_ROOT, '/',str(archivo.RutaArchivo))
+        archivo_path = settings.ROOT_PATH_FILES_STORAGE + settings.MEDIA_ROOT + str(archivo.RutaArchivo);
+        print(archivo_path);
         # Verificar si el archivo realmente existe
         if not os.path.exists(archivo_path):
             raise Http404("El archivo no existe")

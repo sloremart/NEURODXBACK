@@ -149,7 +149,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
-ROOT_PATH_FILES_SYSTEM = '/home/server'
+ROOT_PATH_FILES_STORAGE = '/home/server'
 
 STATICFILES_DIRS = [
     str(BASE_DIR / 'static'),

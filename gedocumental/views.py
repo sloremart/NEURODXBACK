@@ -162,6 +162,9 @@ def archivos_por_admision(request, numero_admision):
 from django.shortcuts import redirect
 from django.http import FileResponse
 
+
+
+
 @api_view(['GET'])
 def donwloadFile(request, id_archivo):
     try:
@@ -169,17 +172,17 @@ def donwloadFile(request, id_archivo):
         archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
 
         # Construir la ruta completa del archivo
-        
-        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_ROOT, '/',str(archivo.RutaArchivo))
-        #archivo_path = settings.ROOT_PATH_FILES_STORAGE + settings.MEDIA_ROOT + str(archivo.RutaArchivo)
-        print(archivo_path)
+        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE, settings.MEDIA_ROOT, str(archivo.RutaArchivo))
+
         # Verificar si el archivo realmente existe
         if not os.path.exists(archivo_path):
             raise Http404("El archivo no existe")
 
         # Redireccionar la respuesta a una nueva ventana
-        response = FileResponse(open(archivo_path, 'rb'))
-        response['Content-Disposition'] = 'inline; filename=' + os.path.basename(archivo_path)
-        return response
+        with open(archivo_path, 'rb') as file:
+            response = FileResponse(file)
+            response['Content-Disposition'] = 'inline; filename=' + os.path.basename(archivo_path)
+            return response
     except ArchivoFacturacion.DoesNotExist:
         raise Http404("El archivo no existe")
+

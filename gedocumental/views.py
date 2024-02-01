@@ -103,10 +103,9 @@ class ArchivoUploadView(APIView):
                 archivos_guardados = []
 
                 for archivo in archivos:
-                    # Construir la ruta del archivo dentro de la carpeta de la admisión
-                   # archivo_path = os.path.join(folder_path, archivo.name)# este es el metodo que guarda el archivo ?si
+                
                     archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, MEDIA_ROOT,'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
-                    # aqui falta una parte
+                 
 
                 archivo_obj = ArchivoFacturacion(
                         Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision

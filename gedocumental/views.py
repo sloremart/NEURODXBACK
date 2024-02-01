@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view
 from django.http import FileResponse
 
 from neurodx.settings import ROOT_PATH_FILES_STORAGE
+from neurodx.settings import MEDIA_ROOT
 from .serializers import ArchivoFacturacionSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion
@@ -102,10 +103,9 @@ class ArchivoUploadView(APIView):
                 archivos_guardados = []
 
                 for archivo in archivos:
-                    # Construir la ruta del archivo dentro de la carpeta de la admisión
-                   # archivo_path = os.path.join(folder_path, archivo.name)# J
-                    archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
-
+                
+                    archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, MEDIA_ROOT,'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
+                 
 
                 archivo_obj = ArchivoFacturacion(
                         Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
@@ -113,8 +113,9 @@ class ArchivoUploadView(APIView):
                         RutaArchivo=archivo_path
                     )
                     
-                    # Resto del código sigue igual
-                    # ...
+                with open(archivo_path, 'wb') as file:
+                    for chunk in archivo.chunks():
+                     file.write(chunk)
                     
                 response_data = {
                     "success": True,

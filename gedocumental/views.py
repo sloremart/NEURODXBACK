@@ -10,6 +10,8 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from django.http import FileResponse
+
+from neurodx.neurodx.settings import ROOT_PATH_FILES_STORAGE
 from .serializers import ArchivoFacturacionSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion
@@ -101,9 +103,11 @@ class ArchivoUploadView(APIView):
 
                 for archivo in archivos:
                     # Construir la ruta del archivo dentro de la carpeta de la admisión
-                    archivo_path = os.path.join(folder_path, archivo.name)
+                   # archivo_path = os.path.join(folder_path, archivo.name)# J
+                    archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
 
-                    archivo_obj = ArchivoFacturacion(
+
+                archivo_obj = ArchivoFacturacion(
                         Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
                         Tipo='TipoArchivo',
                         RutaArchivo=archivo_path
@@ -172,7 +176,7 @@ def donwloadFile(request, id_archivo):
         archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
 
         # Construir la ruta completa del archivo
-        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE, settings.MEDIA_ROOT, str(archivo.RutaArchivo))
+        archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, 'GeDocumental', 'archivosFacturacion', str(archivo.Admision), archivo.RutaArchivo.name)
 
         # Verificar si el archivo realmente existe
         if not os.path.exists(archivo_path):

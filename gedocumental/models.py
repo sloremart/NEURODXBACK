@@ -11,7 +11,7 @@ from django.db.models.signals import pre_delete
 
 class ArchivoFacturacion(models.Model):
     IdArchivo = models.AutoField(primary_key=True)
-    Admision =  models.IntegerField() 
+    Admision_id =  models.IntegerField() 
     Tipo = models.CharField(max_length=50)
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
     RutaArchivo = models.FileField(upload_to='GeDocumental/archivosFacturacion', max_length=255, blank=True, null=True)

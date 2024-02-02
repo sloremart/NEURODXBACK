@@ -3,16 +3,16 @@ from django.db import IntegrityError, transaction
 import logging
 from sqlite3 import IntegrityError
 from django.db import connections
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from django.http import FileResponse
-
 from neurodx.settings import ROOT_PATH_FILES_STORAGE
 from neurodx.settings import MEDIA_ROOT
+from neurodx.settings import BASE_DIR
 from .serializers import ArchivoFacturacionSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion
@@ -68,7 +68,6 @@ class GeDocumentalView(APIView):
 
 
 
-# views.py
 
 
 from django.conf import settings
@@ -84,7 +83,6 @@ class ArchivoUploadView(APIView):
             with transaction.atomic():
                 # Obtener la admisión asociada al consecutivo
                 admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
-                print(admision)
 
                 # Crear la carpeta con el nombre del número de admisión
                 base_path = settings.ROOT_PATH_FILES_STORAGE
@@ -95,7 +93,7 @@ class ArchivoUploadView(APIView):
                         "data": None
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                folder_path = os.path.join(base_path, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
+                folder_path = os.path.join(MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
                 os.makedirs(folder_path, exist_ok=True)
 
                 # Obtener la lista de archivos desde la solicitud
@@ -104,27 +102,41 @@ class ArchivoUploadView(APIView):
                 archivos_guardados = []
 
                 for archivo in archivos:
-                    archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, MEDIA_ROOT,'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
-                    print(archivo_path, ROOT_PATH_FILES_STORAGE, MEDIA_ROOT)
-                 
+                    archivo_path = os.path.join(folder_path, archivo.name)
+                    print(archivo_path)
 
-                archivo_obj = ArchivoFacturacion(
-                        Admision=admision.Consecutivo,  # Utilizar el consecutivo de Admision
-                        Tipo='TipoArchivo',
-                        RutaArchivo=archivo_path
-                    )
-        
-                archivo_obj.NumeroAdmision = admision.Consecutivo 
-                archivo_obj.save()
-                archivos_guardados.append({
+                    try:
+                        # Guardar el archivo físicamente en la nueva ruta
+                        with open(archivo_path, 'wb') as file:
+                            for chunk in archivo.chunks():
+                                file.write(chunk)
+
+                        archivo_obj = ArchivoFacturacion(
+                            Admision_id=admision.Consecutivo,
+                            Tipo='TipoArchivo',
+                            RutaArchivo=archivo_path
+                        )
+
+                        archivo_obj.NumeroAdmision = admision.Consecutivo
+                        archivo_obj.save()
+                        archivos_guardados.append({
                             "id": archivo_obj.IdArchivo,
                             "ruta": archivo_obj.RutaArchivo.url
                         })
-                    
-                with open(archivo_path, 'wb') as file:
-                    for chunk in archivo.chunks():
-                     file.write(chunk)
-                    
+
+                    except IntegrityError as e:
+                        return JsonResponse({
+                            "success": False,
+                            "detail": f"Error de integridad al guardar el archivo: {e}",
+                            "data": None
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    except Exception as e:
+                        return JsonResponse({
+                            "success": False,
+                            "detail": f"Error desconocido al guardar el archivo: {e}",
+                            "data": None
+                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
                 response_data = {
                     "success": True,
                     "detail": f"Archivos guardados exitosamente para la admisión con consecutivo {consecutivo}",
@@ -132,9 +144,6 @@ class ArchivoUploadView(APIView):
                 }
 
                 return JsonResponse(response_data, status=status.HTTP_201_CREATED)
-
-
-
 
         except Admisiones.objects.using('datosipsndx').DoesNotExist:
             response_data = {
@@ -175,31 +184,43 @@ def archivos_por_admision(request, numero_admision):
         return Response(response_data, status=status.HTTP_404_NOT_FOUND)
     
 
-from django.shortcuts import redirect
-from django.http import FileResponse
 
 
 
+
+## visualizar archivo###
 
 @api_view(['GET'])
-def donwloadFile(request, id_archivo):
+def downloadFile(request, id_archivo):
     try:
-        # Buscar el archivo por id
-        archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)
+        
+        archivo = ArchivoFacturacion.objects.get(IdArchivo=id_archivo)       
+        archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE, settings.MEDIA_ROOT, str(archivo.RutaArchivo))
 
-        # Construir la ruta completa del archivo
-        #archivo_path = os.path.join(settings.ROOT_PATH_FILES_STORAGE,'/',settings.MEDIA_ROOT, '/',str(archivo.RutaArchivo))
-        archivo_path = settings.ROOT_PATH_FILES_STORAGE + settings.MEDIA_ROOT + str(archivo.RutaArchivo)
-        print(archivo_path)
+        print("Ruta del archivo:", archivo_path)
+
         # Verificar si el archivo realmente existe
         if not os.path.exists(archivo_path):
             raise Http404("El archivo no existe")
 
-        # Redireccionar la respuesta a una nueva ventana
+        #  modo binario
         with open(archivo_path, 'rb') as file:
-            response = FileResponse(file)
-            response['Content-Disposition'] = 'inline; filename=' + os.path.basename(archivo_path)
-            return response
+            # Lee el contenido del archivo
+            file_content = file.read()
+
+        # Crea una respuesta de archivo con el contenido leído
+        response = HttpResponse(file_content, content_type='application/pdf')
+        response['Content-Disposition'] = 'inline; filename=' + os.path.basename(archivo_path)
+        return response
+
+    except FileNotFoundError:
+        raise Http404("El archivo no se encontró en el sistema de archivos.")
+    except Exception as e:
+        print(f"Error al descargar el archivo: {e}")
+        raise Http404("Ocurrió un error al intentar descargar el archivo.")
     except ArchivoFacturacion.DoesNotExist:
         raise Http404("El archivo no existe")
-
+    finally:
+      
+        if 'file' in locals() and not file.closed:
+            file.close()

@@ -22,7 +22,8 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.1.178']
+#ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['192.168.1.178']  
 
 
 # Application definition
@@ -78,10 +79,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'neurodx.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
-
-# settings.py
+################ DESPLIEGUE 
 
 DATABASES = {
     'default': {
@@ -110,6 +108,42 @@ DATABASES = {
         },
     },
 }
+
+################
+'''
+DATABASES = {
+    'default': {
+        'ENGINE': 'mysql.connector.django',
+        'HOST': 'localhost',
+        'PORT': '3306',
+        'USER': 'root',
+        'PASSWORD': 'root', 
+        'NAME': 'datosipsndx',
+        'OPTIONS': {
+            'autocommit': True,
+            'charset': 'utf8mb4',
+        },
+    },
+     'datosipsndx': {
+        'ENGINE': 'mysql.connector.django',
+        'HOST': 'localhost',
+        'PORT': '3306',
+        'USER': 'root',
+        'PASSWORD': 'root',
+        'NAME': 'datosipsndx',
+        'OPTIONS': {
+            'autocommit': True,
+            'charset': 'utf8mb4',
+        },
+    },
+}
+
+
+'''
+
+
+
+
 
 
 # Password validation
@@ -157,6 +191,7 @@ STATICFILES_DIRS = [
 ]
 
 ROOT_PATH_FILES_STORAGE = '/home/server'
+#ROOT_PATH_FILES_STORAGE = 'C:/Users/loren/Documents'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 

@@ -5,7 +5,7 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import ArchivoUploadView, GeDocumentalView, archivos_por_admision, donwloadFile
+from gedocumental.views import ArchivoUploadView, GeDocumentalView, archivos_por_admision, downloadFile
 
 
 urlpatterns = [
@@ -16,7 +16,7 @@ urlpatterns = [
     path('admisiones/<int:consecutivo>/', GeDocumentalView.as_view()),  # ADMISIONES
     path('archivo-upload/<str:consecutivo>/', ArchivoUploadView.as_view()),  # ARCHIVOS
     path('archivos_por_admision/<int:numero_admision>/', archivos_por_admision, name='archivos_por_admision'),
-    path('descargar/<int:id_archivo>/', donwloadFile, name='descargar_archivo'),
+    path('descargar/<int:id_archivo>/', downloadFile, name='descargar_archivo'),
 ]
 
 if settings.DEBUG:

@@ -89,7 +89,7 @@ DATABASES = {
         'PORT': '3306',
         'USER': 'root',
         'PASSWORD': 'root', 
-        'NAME': 'datosipsndx',
+        'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
             'charset': 'utf8mb4',

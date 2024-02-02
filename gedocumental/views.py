@@ -84,6 +84,7 @@ class ArchivoUploadView(APIView):
             with transaction.atomic():
                 # Obtener la admisión asociada al consecutivo
                 admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
+                print(admision)
 
                 # Crear la carpeta con el nombre del número de admisión
                 base_path = settings.ROOT_PATH_FILES_STORAGE
@@ -103,8 +104,8 @@ class ArchivoUploadView(APIView):
                 archivos_guardados = []
 
                 for archivo in archivos:
-                
                     archivo_path = os.path.join(ROOT_PATH_FILES_STORAGE, MEDIA_ROOT,'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo), archivo.name)
+                    print(archivo_path, ROOT_PATH_FILES_STORAGE, MEDIA_ROOT)
                  
 
                 archivo_obj = ArchivoFacturacion(
@@ -112,6 +113,13 @@ class ArchivoUploadView(APIView):
                         Tipo='TipoArchivo',
                         RutaArchivo=archivo_path
                     )
+        
+                archivo_obj.NumeroAdmision = admision.Consecutivo 
+                archivo_obj.save()
+                archivos_guardados.append({
+                            "id": archivo_obj.IdArchivo,
+                            "ruta": archivo_obj.RutaArchivo.url
+                        })
                     
                 with open(archivo_path, 'wb') as file:
                     for chunk in archivo.chunks():
@@ -124,6 +132,9 @@ class ArchivoUploadView(APIView):
                 }
 
                 return JsonResponse(response_data, status=status.HTTP_201_CREATED)
+
+
+
 
         except Admisiones.objects.using('datosipsndx').DoesNotExist:
             response_data = {

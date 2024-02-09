@@ -8,3 +8,18 @@ class ArchivoFacturacionSerializer(serializers.ModelSerializer):
         model = ArchivoFacturacion
         fields = '__all__'
 
+class AdmisionConArchivosSerializer(serializers.ModelSerializer):
+    archivos_facturacion = ArchivoFacturacionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ArchivoFacturacion
+        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion']
+
+class RevisionCuentaMedicaSerializer(serializers.ModelSerializer):
+    archivos_facturacion = ArchivoFacturacionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ArchivoFacturacion
+        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion', 'RevisionPrimera',]
+
+

@@ -1,6 +1,7 @@
-from datetime import date, timedelta, datetime
+from datetime import  datetime
 from django.db import IntegrityError, transaction
-import logging
+from rest_framework import generics
+from django.utils.timezone import make_aware
 from sqlite3 import IntegrityError
 from django.db import connections
 from django.http import HttpResponse, JsonResponse
@@ -9,15 +10,13 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
-from django.http import FileResponse
-from neurodx.settings import ROOT_PATH_FILES_STORAGE
 from neurodx.settings import MEDIA_ROOT
-from neurodx.settings import BASE_DIR
-from .serializers import ArchivoFacturacionSerializer
+from .serializers import AdmisionConArchivosSerializer, ArchivoFacturacionSerializer, RevisionCuentaMedicaSerializer
 from django.http import Http404
-from .models import ArchivoFacturacion
+from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
 from .modelsFacturacion import Admisiones
-
+from django.conf import settings
+import os
 
 
 
@@ -70,12 +69,17 @@ class GeDocumentalView(APIView):
 
 
 
-from django.conf import settings
-import os
 
 
 class ArchivoUploadView(APIView):
     parser_classes = (MultiPartParser, FormParser)
+    @staticmethod
+
+    def create_auditoria_entry(admision_id):
+        try:
+            AuditoriaCuentasMedicas.objects.create(AdmisionId=admision_id)
+        except Exception as e:
+            print(f"Error creating AuditoriaCuentasMedicas entry: {e}")
 
     def post(self, request, consecutivo, format=None):
         print(f"Consecutivo recibido en la vista: {consecutivo}")
@@ -110,7 +114,8 @@ class ArchivoUploadView(APIView):
                         with open(archivo_path, 'wb') as file:
                             for chunk in archivo.chunks():
                                 file.write(chunk)
-
+                                
+  # Crear registro en ArchivoFacturacion
                         archivo_obj = ArchivoFacturacion(
                             Admision_id=admision.Consecutivo,
                             Tipo='TipoArchivo',
@@ -152,11 +157,6 @@ class ArchivoUploadView(APIView):
                 "data": None
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
-
-
-
-
-
 
 
 ############# cargar archivos ############################
@@ -224,3 +224,90 @@ def downloadFile(request, id_archivo):
       
         if 'file' in locals() and not file.closed:
             file.close()
+
+
+######## REVISION CUENTAS MEDICAS - TALENTO HUMANO #######
+            
+
+
+
+class AdmisionCuentaMedicaView(APIView):
+    def post(self, request, *args, **kwargs):
+        print("Datos recibidos en la solicitud:", request.data)
+        data = request.data
+        archivos = data.get('archivos', [])
+        consecutivo_consulta = data.get('consecutivoConsulta')
+
+        try:
+            with transaction.atomic():
+                for archivo_data in archivos:
+                    archivo_id = archivo_data.get('IdArchivo')
+                    try:
+                        archivo_existente = ArchivoFacturacion.objects.get(IdArchivo=archivo_id)
+                        archivo_serializer = RevisionCuentaMedicaSerializer(archivo_existente, data=archivo_data, partial=True)
+
+                        if archivo_serializer.is_valid():
+                            archivo_serializer.save()
+                        else:
+                            errors = archivo_serializer.errors
+                            return Response({"success": False, "message": "Error de validación en los datos del archivo", "error_details": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+                    except ArchivoFacturacion.DoesNotExist:
+                        return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+                # Obtener los IDs de admisión de los archivos procesados
+                admision_ids = [archivo_data.get('Admision_id') for archivo_data in archivos]
+
+                # Filtrar los registros de AuditoriaCuentasMedicas correspondientes a las admisiones procesadas
+                auditoria_cuentas_medicas = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
+
+                # Verificar si todos los archivos de las admisiones tienen RevisionPrimera en True
+                todos_revision_primera_true = all(archivo_data.get('RevisionPrimera', False) for archivo_data in archivos)
+
+                # Actualizar el estado en la tabla AuditoriaCuentasMedicas solo para las admisiones procesadas
+                auditoria_cuentas_medicas.update(RevisionCuentasMedicas=todos_revision_primera_true)
+
+                return Response({"success": True, "message": "Datos guardados correctamente"}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+####### FILTRO DE ADMISIONES Y ARCHIVOS POR FECHA ####
+    
+    
+class ArchivosPorFechaCreacionView(generics.ListAPIView):
+    serializer_class = AdmisionConArchivosSerializer
+
+    def get_queryset(self):
+        # Obtener la fecha de creación de la URL
+        fecha_str = self.kwargs['fecha_creacion']
+        # Convertir la fecha de cadena a un objeto de fecha y hora
+        fecha_creacion = make_aware(datetime.strptime(fecha_str, '%Y-%m-%d'))
+
+        # Filtrar los archivos por fecha de creación
+        archivos_por_fecha = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__date=fecha_creacion.date())
+
+        # Obtener los números de admisión únicos de los archivos encontrados
+        numeros_admision = archivos_por_fecha.values_list('Admision_id', flat=True).distinct()
+
+        # Obtener las admisiones correspondientes a los números de admisión encontrados
+        queryset = ArchivoFacturacion.objects.filter(Admision_id__in=numeros_admision)
+        return queryset
+    
+
+class EstadoRevisionCuentasMedicasView(APIView):
+    def get(self, request, format=None):
+        # Obtener las admisiones con RevisionCuentasMedicas en True
+        admisiones_true = AdmisionCuentaMedicaView.objects.filter(RevisionCuentasMedicas=True)
+
+        # Obtener las admisiones con RevisionCuentasMedicas en False
+        admisiones_false = AdmisionCuentaMedicaView.objects.filter(RevisionCuentasMedicas=False)
+
+        # Serializar los resultados si es necesario
+        data_true = [{'AdmisionId': admision.AdmisionId, 'FechaCreacion': admision.FechaCreacion} for admision in admisiones_true]
+        data_false = [{'AdmisionId': admision.AdmisionId, 'FechaCreacion': admision.FechaCreacion} for admision in admisiones_false]
+
+        return Response({
+            'admsiones_con_revision_true': data_true,
+            'admsiones_con_revision_false': data_false
+        })

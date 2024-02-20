@@ -1,7 +1,8 @@
-from datetime import  datetime
-from django.db import IntegrityError, transaction
-from rest_framework import generics
+from datetime import datetime
+from django.utils import timezone
 from django.utils.timezone import make_aware
+from django.db import IntegrityError, transaction
+from django.db.models.functions import TruncDate
 from sqlite3 import IntegrityError
 from django.db import connections
 from django.http import HttpResponse, JsonResponse
@@ -10,14 +11,14 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
+from gedocumental.modelsFacturacion import Admisiones
 from neurodx.settings import MEDIA_ROOT
-from .serializers import AdmisionConArchivosSerializer, ArchivoFacturacionSerializer, RevisionCuentaMedicaSerializer
+from .serializers import   ArchivoFacturacionSerializer, RevisionCuentaMedicaSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
-from .modelsFacturacion import Admisiones
+
 from django.conf import settings
 import os
-
 
 
 
@@ -65,90 +66,76 @@ class GeDocumentalView(APIView):
 
                 return Response(response_data, status=status.HTTP_404_NOT_FOUND)
 
-
-
-
-
-
-
 class ArchivoUploadView(APIView):
     parser_classes = (MultiPartParser, FormParser)
-    @staticmethod
-
-    def create_auditoria_entry(admision_id):
-        try:
-            AuditoriaCuentasMedicas.objects.create(AdmisionId=admision_id)
-        except Exception as e:
-            print(f"Error creating AuditoriaCuentasMedicas entry: {e}")
 
     def post(self, request, consecutivo, format=None):
         print(f"Consecutivo recibido en la vista: {consecutivo}")
         try:
-            with transaction.atomic():
-                # Obtener la admisión asociada al consecutivo
-                admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
+            # Obtener la admisión asociada al consecutivo
+            admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
-                # Crear la carpeta con el nombre del número de admisión
-                base_path = settings.ROOT_PATH_FILES_STORAGE
-                if not os.path.exists(base_path):
+            # Crear la carpeta con el nombre del número de admisión
+            base_path = settings.ROOT_PATH_FILES_STORAGE
+            if not os.path.exists(base_path):
+                return JsonResponse({
+                    "success": False,
+                    "detail": f"El directorio base {base_path} no existe.",
+                    "data": None
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            folder_path = os.path.join(MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
+            os.makedirs(folder_path, exist_ok=True)
+
+            # Obtener la lista de archivos desde la solicitud
+            archivos = request.FILES.getlist('files')
+            print("Archivos recibidos en la vista:", archivos)
+            archivos_guardados = []
+
+            for archivo in archivos:
+                archivo_path = os.path.join(folder_path, archivo.name)
+                print(archivo_path)
+
+                try:
+                    # Guardar el archivo físicamente en la nueva ruta
+                    with open(archivo_path, 'wb') as file:
+                        for chunk in archivo.chunks():
+                            file.write(chunk)
+
+                    # Crear registro en ArchivoFacturacion
+                    archivo_obj = ArchivoFacturacion(
+                        Admision_id=admision.Consecutivo,
+                        Tipo='TipoArchivo',
+                        RutaArchivo=archivo_path
+                    )
+
+                    archivo_obj.NumeroAdmision = admision.Consecutivo
+                    archivo_obj.save()
+                    archivos_guardados.append({
+                        "id": archivo_obj.IdArchivo,
+                        "ruta": archivo_obj.RutaArchivo.url
+                    })
+
+                except IntegrityError as e:
                     return JsonResponse({
                         "success": False,
-                        "detail": f"El directorio base {base_path} no existe.",
+                        "detail": f"Error de integridad al guardar el archivo: {e}",
+                        "data": None
+                    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                except Exception as e:
+                    return JsonResponse({
+                        "success": False,
+                        "detail": f"Error desconocido al guardar el archivo: {e}",
                         "data": None
                     }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-                folder_path = os.path.join(MEDIA_ROOT, 'GeDocumental', 'archivosFacturacion', str(admision.Consecutivo))
-                os.makedirs(folder_path, exist_ok=True)
+            response_data = {
+                "success": True,
+                "detail": f"Archivos guardados exitosamente para la admisión con consecutivo {consecutivo}",
+                "data": archivos_guardados
+            }
 
-                # Obtener la lista de archivos desde la solicitud
-                archivos = request.FILES.getlist('files')
-                print("Archivos recibidos en la vista:", archivos)
-                archivos_guardados = []
-
-                for archivo in archivos:
-                    archivo_path = os.path.join(folder_path, archivo.name)
-                    print(archivo_path)
-
-                    try:
-                        # Guardar el archivo físicamente en la nueva ruta
-                        with open(archivo_path, 'wb') as file:
-                            for chunk in archivo.chunks():
-                                file.write(chunk)
-                                
-  # Crear registro en ArchivoFacturacion
-                        archivo_obj = ArchivoFacturacion(
-                            Admision_id=admision.Consecutivo,
-                            Tipo='TipoArchivo',
-                            RutaArchivo=archivo_path
-                        )
-
-                        archivo_obj.NumeroAdmision = admision.Consecutivo
-                        archivo_obj.save()
-                        archivos_guardados.append({
-                            "id": archivo_obj.IdArchivo,
-                            "ruta": archivo_obj.RutaArchivo.url
-                        })
-
-                    except IntegrityError as e:
-                        return JsonResponse({
-                            "success": False,
-                            "detail": f"Error de integridad al guardar el archivo: {e}",
-                            "data": None
-                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-                    except Exception as e:
-                        return JsonResponse({
-                            "success": False,
-                            "detail": f"Error desconocido al guardar el archivo: {e}",
-                            "data": None
-                        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-                response_data = {
-                    "success": True,
-                    "detail": f"Archivos guardados exitosamente para la admisión con consecutivo {consecutivo}",
-                    "data": archivos_guardados
-                }
-
-                return JsonResponse(response_data, status=status.HTTP_201_CREATED)
+            return JsonResponse(response_data, status=status.HTTP_201_CREATED)
 
         except Admisiones.objects.using('datosipsndx').DoesNotExist:
             response_data = {
@@ -158,8 +145,59 @@ class ArchivoUploadView(APIView):
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
 
+##### EDICION DE ARCHIVOS ##########
 
-############# cargar archivos ############################
+class ArchivoEditView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def put(self, request, consecutivo, archivo_id, format=None):
+        try:
+            admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
+            archivo = ArchivoFacturacion.objects.get(IdArchivo=archivo_id, Admision_id=admision.Consecutivo)
+            if 'archivo' in request.FILES:
+                archivo_nuevo = request.FILES['archivo']
+                archivo.NombreArchivo = archivo_nuevo.name  # Actualizar el nombre del archivo
+                archivo.RutaArchivo = archivo_nuevo  # Actualizar la ruta del archivo
+                archivo.save(update_fields=['NombreArchivo', 'RutaArchivo'])  # Guardar solo los campos modificados
+
+                # Actualizar la fecha de carga del archivo en la tabla de auditoría
+                auditoria = AuditoriaCuentasMedicas.objects.get(AdmisionId=archivo.Admision_id)
+                auditoria.FechaCargueArchivo = timezone.now()
+                auditoria.save(update_fields=['FechaCargueArchivo'])
+
+            response_data = {
+                "success": True,
+                "detail": f"Archivo {archivo_id} editado exitosamente para la admisión con consecutivo {consecutivo}",
+                "data": None
+            }
+
+            return JsonResponse(response_data, status=status.HTTP_200_OK)
+
+        except Admisiones.DoesNotExist:
+            response_data = {
+                "success": False,
+                "detail": f"No se encontró la admisión con consecutivo {consecutivo}",
+                "data": None
+            }
+            return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+
+        except ArchivoFacturacion.DoesNotExist:
+            response_data = {
+                "success": False,
+                "detail": f"No se encontró el archivo con ID {archivo_id} asociado a la admisión con consecutivo {consecutivo}",
+                "data": None
+            }
+            return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+
+        except Exception as e:
+            return JsonResponse({
+                "success": False,
+                "detail": f"Error desconocido al editar el archivo: {e}",
+                "data": None
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        
+############# archivos ############################
 @api_view(['GET'])
 def archivos_por_admision(request, numero_admision):
     try:
@@ -183,10 +221,6 @@ def archivos_por_admision(request, numero_admision):
 
         return Response(response_data, status=status.HTTP_404_NOT_FOUND)
     
-
-
-
-
 
 ## visualizar archivo###
 
@@ -229,8 +263,6 @@ def downloadFile(request, id_archivo):
 ######## REVISION CUENTAS MEDICAS - TALENTO HUMANO #######
             
 
-
-
 class AdmisionCuentaMedicaView(APIView):
     def post(self, request, *args, **kwargs):
         print("Datos recibidos en la solicitud:", request.data)
@@ -252,62 +284,71 @@ class AdmisionCuentaMedicaView(APIView):
                             errors = archivo_serializer.errors
                             return Response({"success": False, "message": "Error de validación en los datos del archivo", "error_details": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+                        observacion = archivo_data.get('Observacion')
+                        if observacion is not None and observacion.strip():
+                            observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo_existente, Descripcion =observacion)
+                            print("Observación creada:", observacion_obj)
+
                     except ArchivoFacturacion.DoesNotExist:
                         return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
-                # Obtener los IDs de admisión de los archivos procesados
                 admision_ids = [archivo_data.get('Admision_id') for archivo_data in archivos]
 
-                # Filtrar los registros de AuditoriaCuentasMedicas correspondientes a las admisiones procesadas
                 auditoria_cuentas_medicas = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
-
-                # Verificar si todos los archivos de las admisiones tienen RevisionPrimera en True
                 todos_revision_primera_true = all(archivo_data.get('RevisionPrimera', False) for archivo_data in archivos)
 
-                # Actualizar el estado en la tabla AuditoriaCuentasMedicas solo para las admisiones procesadas
                 auditoria_cuentas_medicas.update(RevisionCuentasMedicas=todos_revision_primera_true)
 
                 return Response({"success": True, "message": "Datos guardados correctamente"}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
 ####### FILTRO DE ADMISIONES Y ARCHIVOS POR FECHA ####
-    
-    
-class ArchivosPorFechaCreacionView(generics.ListAPIView):
-    serializer_class = AdmisionConArchivosSerializer
 
-    def get_queryset(self):
-        # Obtener la fecha de creación de la URL
-        fecha_str = self.kwargs['fecha_creacion']
-        # Convertir la fecha de cadena a un objeto de fecha y hora
-        fecha_creacion = make_aware(datetime.strptime(fecha_str, '%Y-%m-%d'))
 
-        # Filtrar los archivos por fecha de creación
-        archivos_por_fecha = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__date=fecha_creacion.date())
+class FiltroAuditoriaCuentasMedicas(APIView):
+    def get(self, request):
+        fecha_creacion_str = request.query_params.get('FechaCreacion', None)
+        revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
 
-        # Obtener los números de admisión únicos de los archivos encontrados
-        numeros_admision = archivos_por_fecha.values_list('Admision_id', flat=True).distinct()
+        queryset = AuditoriaCuentasMedicas.objects.all()
 
-        # Obtener las admisiones correspondientes a los números de admisión encontrados
-        queryset = ArchivoFacturacion.objects.filter(Admision_id__in=numeros_admision)
-        return queryset
-    
+        if fecha_creacion_str:
+            fecha_creacion = datetime.strptime(fecha_creacion_str, '%Y-%m-%d').date()
+            queryset = queryset.annotate(creacion_date=TruncDate('FechaCreacion')).filter(creacion_date=fecha_creacion)
 
-class EstadoRevisionCuentasMedicasView(APIView):
-    def get(self, request, format=None):
-        # Obtener las admisiones con RevisionCuentasMedicas en True
-        admisiones_true = AdmisionCuentaMedicaView.objects.filter(RevisionCuentasMedicas=True)
+        if revision_cuentas_medicas is not None:
+            queryset = queryset.filter(RevisionCuentasMedicas=bool(int(revision_cuentas_medicas)))
 
-        # Obtener las admisiones con RevisionCuentasMedicas en False
-        admisiones_false = AdmisionCuentaMedicaView.objects.filter(RevisionCuentasMedicas=False)
+        # Lista para almacenar los datos finales
+        response_data = []
 
-        # Serializar los resultados si es necesario
-        data_true = [{'AdmisionId': admision.AdmisionId, 'FechaCreacion': admision.FechaCreacion} for admision in admisiones_true]
-        data_false = [{'AdmisionId': admision.AdmisionId, 'FechaCreacion': admision.FechaCreacion} for admision in admisiones_false]
+        # Realizar la consulta a la base de datos y obtener los campos de Admisiones
+        with connections['datosipsndx'].cursor() as cursor:
+            for auditoria in queryset:
+                cursor.execute('''
+                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
+                    FROM admisiones
+                    WHERE Consecutivo = %s
+                ''', [auditoria.AdmisionId])
+                admision_data = cursor.fetchone()
 
-        return Response({
-            'admsiones_con_revision_true': data_true,
-            'admsiones_con_revision_false': data_false
-        })
+                if admision_data:
+                    # Combinar los campos de AuditoriaCuentasMedicas y Admisiones
+                    data = {
+                        'AdmisionId': auditoria.AdmisionId,
+                        'FechaCreacion': auditoria.FechaCreacion.isoformat(),
+                        'FechaCargueArchivo': auditoria.FechaCargueArchivo.isoformat(),
+                        'Observacion': auditoria.Observacion,
+                        'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                        'RevisionTesoreria': auditoria.RevisionTesoreria,
+                        'Consecutivo': admision_data[0],
+                        'IdPaciente': admision_data[1],
+                        'CodigoEntidad': admision_data[2],
+                        'NombreResponsable': admision_data[3],
+                        'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
+                    }
+                    response_data.append(data)
+
+        return Response(response_data)

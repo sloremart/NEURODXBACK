@@ -12,6 +12,7 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from gedocumental.modelsFacturacion import Admisiones
+from gedocumental.utils.codigoentidad import obtener_tipos_documentos_por_entidad
 from neurodx.settings import MEDIA_ROOT
 from .serializers import   ArchivoFacturacionSerializer, RevisionCuentaMedicaSerializer
 from django.http import Http404
@@ -39,6 +40,9 @@ class GeDocumentalView(APIView):
                 query_factura = 'SELECT Prefijo FROM facturas WHERE AdmisionNo = %s'
                 cursor.execute(query_factura, [consecutivo])
                 factura_info = cursor.fetchone()
+                codigo_entidad = admision_data[2]
+                tipos_documentos = obtener_tipos_documentos_por_entidad(codigo_entidad)
+
 
                 
                 transformed_data = {
@@ -48,6 +52,7 @@ class GeDocumentalView(APIView):
                     'NombreResponsable': admision_data[3],
                     'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
                     'Prefijo': factura_info[0] if factura_info else None,
+                    'TiposDocumentos': tipos_documentos
                 }
 
                 response_data = {
@@ -105,7 +110,7 @@ class ArchivoUploadView(APIView):
                     # Crear registro en ArchivoFacturacion
                     archivo_obj = ArchivoFacturacion(
                         Admision_id=admision.Consecutivo,
-                        Tipo='TipoArchivo',
+                        Tipo=request.data.get('tipoDocumentos', None),  
                         RutaArchivo=archivo_path
                     )
 

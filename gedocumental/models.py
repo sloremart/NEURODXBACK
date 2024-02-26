@@ -10,7 +10,7 @@ from django.db.models.signals import pre_delete,pre_save,post_save
 class ArchivoFacturacion(models.Model):
     IdArchivo = models.AutoField(primary_key=True)
     Admision_id =  models.IntegerField() 
-    Tipo = models.CharField(max_length=50)
+    Tipo = models.CharField(max_length=50, choices=[])
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
     RutaArchivo = models.FileField(upload_to='GeDocumental/archivosFacturacion', max_length=255, blank=True, null=True)
     NumeroAdmision = models.IntegerField() 
@@ -88,3 +88,13 @@ def create_observacion_archivo(sender, instance, created, **kwargs):
     if created and instance.Observacion:
         observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=instance, Descripcion=instance.Observacion)
         print("Instancia de ObservacionesArchivos creada:", observacion_obj)
+
+
+
+
+class TiposDocumentos(models.Model):
+    CodigoEntidad = models.CharField(max_length=20, unique=True)
+    Documentos = models.TextField() 
+
+    def __str__(self):
+        return self.CodigoEntidad

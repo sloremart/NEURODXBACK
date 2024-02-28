@@ -326,10 +326,8 @@ class FiltroAuditoriaCuentasMedicas(APIView):
         if revision_cuentas_medicas is not None:
             queryset = queryset.filter(RevisionCuentasMedicas=bool(int(revision_cuentas_medicas)))
 
-        # Lista para almacenar los datos finales
         response_data = []
 
-        # Realizar la consulta a la base de datos y obtener los campos de Admisiones
         with connections['datosipsndx'].cursor() as cursor:
             for auditoria in queryset:
                 cursor.execute('''
@@ -340,7 +338,6 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                 admision_data = cursor.fetchone()
 
                 if admision_data:
-                    # Combinar los campos de AuditoriaCuentasMedicas y Admisiones
                     data = {
                         'AdmisionId': auditoria.AdmisionId,
                         'FechaCreacion': auditoria.FechaCreacion.isoformat(),
@@ -352,7 +349,8 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                         'IdPaciente': admision_data[1],
                         'CodigoEntidad': admision_data[2],
                         'NombreResponsable': admision_data[3],
-                        'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
+                        'CedulaResponsable': admision_data[4],
+                        'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
                     }
                     response_data.append(data)
 

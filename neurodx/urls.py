@@ -6,7 +6,7 @@ from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
 from gedocumental.views import AdmisionCuentaMedicaView,  ArchivoEditView, ArchivoUploadView,  FiltroAuditoriaCuentasMedicas, GeDocumentalView, archivos_por_admision, downloadFile
-
+ 
 
 urlpatterns = [
     path('admin/', admin.site.urls),

@@ -357,3 +357,29 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                     response_data.append(data)
 
         return Response(response_data)
+
+
+class CodigoListView(APIView):
+    def get(self, request, format=None):
+        codigos = [
+            'SAN01',
+            'SAN02',
+            'POL11',
+            'POL12',
+            'PML01',
+            'COM01',
+            'CAJACO',
+            'CAJASU',
+            'SAL01',
+            'CAP01',
+            'UNA01',
+            'DM02',
+            'EQV01',
+            'PAR01',
+            'CHM01',
+            'CHM02',
+            'COL01',
+            'MES01',
+            'SAL01'
+        ]
+        return Response(codigos)

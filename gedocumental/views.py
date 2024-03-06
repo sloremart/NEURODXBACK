@@ -316,6 +316,7 @@ class FiltroAuditoriaCuentasMedicas(APIView):
     def get(self, request):
         fecha_creacion_str = request.query_params.get('FechaCreacion', None)
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
+        codigo_entidad = request.query_params.get('CodigoEntidad', None)
 
         queryset = AuditoriaCuentasMedicas.objects.all()
 
@@ -338,20 +339,63 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                 admision_data = cursor.fetchone()
 
                 if admision_data:
-                    data = {
-                        'AdmisionId': auditoria.AdmisionId,
-                        'FechaCreacion': auditoria.FechaCreacion.isoformat(),
-                        'FechaCargueArchivo': auditoria.FechaCargueArchivo.isoformat(),
-                        'Observacion': auditoria.Observacion,
-                        'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
-                        'RevisionTesoreria': auditoria.RevisionTesoreria,
-                        'Consecutivo': admision_data[0],
-                        'IdPaciente': admision_data[1],
-                        'CodigoEntidad': admision_data[2],
-                        'NombreResponsable': admision_data[3],
-                        'CedulaResponsable': admision_data[4],
-                        'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
-                    }
-                    response_data.append(data)
+                    if codigo_entidad and codigo_entidad == admision_data[2]:
+                        data = {
+                            'AdmisionId': auditoria.AdmisionId,
+                            'FechaCreacion': auditoria.FechaCreacion.isoformat(),
+                            'FechaCargueArchivo': auditoria.FechaCargueArchivo.isoformat(),
+                            'Observacion': auditoria.Observacion,
+                            'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                            'RevisionTesoreria': auditoria.RevisionTesoreria,
+                            'Consecutivo': admision_data[0],
+                            'IdPaciente': admision_data[1],
+                            'CodigoEntidad': admision_data[2],
+                            'NombreResponsable': admision_data[3],
+                            'CedulaResponsable': admision_data[4],
+                            'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
+                        }
+                        response_data.append(data)
+                    elif not codigo_entidad:
+                        data = {
+                            'AdmisionId': auditoria.AdmisionId,
+                            'FechaCreacion': auditoria.FechaCreacion.isoformat(),
+                            'FechaCargueArchivo': auditoria.FechaCargueArchivo.isoformat(),
+                            'Observacion': auditoria.Observacion,
+                            'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                            'RevisionTesoreria': auditoria.RevisionTesoreria,
+                            'Consecutivo': admision_data[0],
+                            'IdPaciente': admision_data[1],
+                            'CodigoEntidad': admision_data[2],
+                            'NombreResponsable': admision_data[3],
+                            'CedulaResponsable': admision_data[4],
+                            'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
+                        }
+                        response_data.append(data)
 
         return Response(response_data)
+
+
+class CodigoListView(APIView):
+    def get(self, request, format=None):
+        codigos = [
+            'SAN01',
+            'SAN02',
+            'POL11',
+            'POL12',
+            'PML01',
+            'COM01',
+            'CAJACO',
+            'CAJASU',
+            'SAL01',
+            'CAP01',
+            'UNA01',
+            'DM02',
+            'EQV01',
+            'PAR01',
+            'CHM01',
+            'CHM02',
+            'COL01',
+            'MES01',
+            'SAL01'
+        ]
+        return Response(codigos)

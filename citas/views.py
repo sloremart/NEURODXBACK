@@ -9,21 +9,25 @@ from rest_framework import status
 
 class CitasApiView(APIView):
     def get(self, request, format=None):
-        fecha_inicio = datetime.strptime('2024-01-29 07:00', '%Y-%m-%d %H:%M')
-        fecha_fin = datetime.strptime('2024-01-29 22:00', '%Y-%m-%d %H:%M')
-        today = date.today()
-        tomorrow = today + timedelta(days=1)
 
-        # Definir la hora de inicio y fin para las citas (7 am y 1 pm)
-        start_time = datetime.strptime('07:00', '%H:%M').time()
-        end_time = datetime.strptime('19:00', '%H:%M').time()
+         # Obtener la fecha de la URL o utilizar la fecha actual si no se proporciona
+        fecha_str = request.GET.get('fecha', None)
+        if fecha_str:
+            # Convertir la cadena de fecha en un objeto datetime
+            try:
+                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Formato de fecha inválido"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            fecha = date.today()
 
-        start_datetime = datetime.combine(tomorrow, start_time)
-        end_datetime = datetime.combine(tomorrow, end_time)
-
+        # Usar la fecha en el resto del código
+        fecha_inicio = datetime.combine(fecha, datetime.min.time())
+        fecha_fin = datetime.combine(fecha, datetime.max.time())
+     
         with connections['datosipsndx'].cursor() as cursor:
             query = '''
-                SELECT FechaCita, NumeroPaciente, IdMedico
+                SELECT FechaCita, NumeroPaciente, IdMedico, IdCita
                 FROM citas
                 WHERE FechaCita != "" 
                 AND FechaCita BETWEEN %s AND %s
@@ -32,12 +36,14 @@ class CitasApiView(APIView):
             '''
             
             print("Consulta SQL:", query, [fecha_inicio.strftime('%Y%m%d%H%M'), fecha_fin.strftime('%Y%m%d%H%M')])
+
             cursor.execute(query, [fecha_inicio.strftime('%Y%m%d%H%M'), fecha_fin.strftime('%Y%m%d%H%M')])
             citas_data = [
                 {
                     'FechaCita': self.format_char_date(row[0]),
                     'NumeroPaciente': row[1],
-                    'IdMedico':row[2],                    
+                    'IdMedico':row[2],  
+                    'IdCita':row[3],                    
                     'PacienteInfo': self.get_paciente_info(row[1]),
 
                 }
@@ -50,7 +56,9 @@ class CitasApiView(APIView):
                 "name": f"{cita['PacienteInfo']['Nombre1']} {cita['PacienteInfo']['Nombre2']} {cita['PacienteInfo']['Apellido1']} {cita['PacienteInfo']['Apellido2']}",
                 "phone": f"57{cita['PacienteInfo']['Telefono']}", 
                 "fecha_cita": cita['FechaCita'],
+                "id_paciente":f"{ cita['PacienteInfo']['IDPaciente']}",
                 "id_medico": cita['IdMedico'],
+                "id_cita": cita['IdCita'],
                 "nueva_sede": self.get_nueva_sede(cita["IdMedico"])
             }
             for cita in citas_data

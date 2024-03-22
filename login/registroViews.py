@@ -2,7 +2,7 @@
 
 from rest_framework import generics, permissions
 from rest_framework.response import Response
-
+from django.contrib.auth import authenticate
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -36,13 +36,22 @@ class LoginView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        user = serializer.validated_data['user']
-        token, created = Token.objects.get_or_create(user=user)
+        username = serializer.validated_data['username']
+        password = serializer.validated_data['password']
 
-        user_serializer = UserSerializer(user)
-        response_data = {
-            'token': token.key,
-            'user': user_serializer.data,
-        }
+        user = authenticate(username=username, password=password)
 
-        return Response(response_data, status=status.HTTP_200_OK)
+        if user is not None:
+            token, created = Token.objects.get_or_create(user=user)
+            user_serializer = UserSerializer(user)
+            response_data = {
+                'token': token.key,
+                'user': user_serializer.data,
+            }
+
+            # Imprimir el token generado para verificar
+            print("Token generado:", token.key)
+
+            return Response(response_data, status=status.HTTP_200_OK)
+        else:
+            return Response({'error': 'Nombre de usuario o contraseña incorrectos.'}, status=status.HTTP_400_BAD_REQUEST)

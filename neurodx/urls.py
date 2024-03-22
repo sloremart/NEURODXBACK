@@ -5,7 +5,7 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import AdmisionCuentaMedicaView,  ArchivoEditView, ArchivoUploadView, CodigoListView,  FiltroAuditoriaCuentasMedicas, GeDocumentalView, archivos_por_admision, downloadFile
+from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView,  FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, admisiones_con_observaciones_por_usuario, archivos_por_admision,  downloadFile
 
 
 urlpatterns = [
@@ -17,10 +17,13 @@ urlpatterns = [
     path('archivo_upload/<str:consecutivo>/', ArchivoUploadView.as_view()),  # ARCHIVOS
     path('archivos_por_admision/<int:numero_admision>/', archivos_por_admision, name='archivos_por_admision'),
     path('descargar/<int:id_archivo>/', downloadFile, name='descargar_archivo'),
-    path('admision_revision/<str:consecutivoConsulta>/', AdmisionCuentaMedicaView.as_view()),  # ADMISION CUENTAS MEDICAS - TALENTO HUMANO
+    path('admision_revision/<str:consecutivoConsulta>/', AdmisionCuentaMedicaView.as_view()),  # REV ADMISION CUENTAS MEDICAS 
+    path('admision_revision_tesoreria/<str:consecutivoConsulta>/', AdmisionTesoreriaView.as_view()),# REV ADMISION TESORERIA
     path('filtro_auditoria/', FiltroAuditoriaCuentasMedicas.as_view(), name='filtro_auditoria'),
     path('admisiones/<str:consecutivo>/editar/<int:archivo_id>/', ArchivoEditView.as_view(), name='borrar_archivo'),## editar DE ARCHIVOS 
     path('lista_codigo_entidad/', CodigoListView.as_view()),
+    path('archivos_por_usuario_observacion/<int:usuario_id>/', admisiones_con_observaciones_por_usuario, name='archivos_por_usuario'),
+    path('filtro_tesoreria/', FiltroTesoreria.as_view(), name='filtro_tesoreria'),
 
 ]
 

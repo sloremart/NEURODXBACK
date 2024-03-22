@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 import os
 from pathlib import Path
+import datetime
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -42,8 +43,6 @@ INSTALLED_APPS = [
     'gedocumental',
     'login',
     'citas',
-
-    
 ]
 
 MIDDLEWARE = [
@@ -93,7 +92,6 @@ DATABASES = {
         'OPTIONS': {
             'autocommit': True,
             'charset': 'utf8mb4',
-            
         },
     },
      'datosipsndx': {
@@ -160,10 +158,20 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
-      
     ],
 }
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS"
+]
+
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
@@ -174,6 +182,13 @@ CSRF_COOKIE_SECURE = False
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
-  
-    
 ]
+
+CORS_ALLOW_HEADERS = [
+    'Accept',
+    'Accept-Language',
+    'Content-Type',
+    'Authorization',  
+]
+
+JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)

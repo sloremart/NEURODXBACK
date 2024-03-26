@@ -30,7 +30,7 @@ class RevisionCuentaMedicaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ArchivoFacturacion
-        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion', 'RevisionPrimera']
+        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion', 'RevisionPrimera',  'RevisionSegunda']
 
 class AuditoriaCuentasMedicasSerializer(serializers.ModelSerializer):
     class Meta:

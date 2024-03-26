@@ -9,51 +9,51 @@ from rest_framework import status
 
 class CitasApiView(APIView):
     def get(self, request, format=None):
-        fecha_inicio = datetime.strptime('2024-01-29 07:00', '%Y-%m-%d %H:%M')
-        fecha_fin = datetime.strptime('2024-01-29 22:00', '%Y-%m-%d %H:%M')
-        today = date.today()
-        tomorrow = today + timedelta(days=1)
+        fecha_str = request.GET.get('fecha', None)
+        if fecha_str:
+            try:
+                fecha = datetime.strptime(fecha_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Formato de fecha inválido"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            fecha = date.today()
 
-        # Definir la hora de inicio y fin para las citas (7 am y 1 pm)
-        start_time = datetime.strptime('07:00', '%H:%M').time()
-        end_time = datetime.strptime('19:00', '%H:%M').time()
-
-        start_datetime = datetime.combine(tomorrow, start_time)
-        end_datetime = datetime.combine(tomorrow, end_time)
-
+        fecha_inicio = datetime.combine(fecha, datetime.min.time())
+        fecha_fin = datetime.combine(fecha, datetime.max.time())
+        
         with connections['datosipsndx'].cursor() as cursor:
             query = '''
-                SELECT FechaCita, NumeroPaciente, IdMedico
+                SELECT FechaCita, NumeroPaciente, IdMedico, IdCita
                 FROM citas
                 WHERE FechaCita != "" 
                 AND FechaCita BETWEEN %s AND %s
                 AND FechaCancelacion IS NULL
-              
             '''
             
-            print("Consulta SQL:", query, [fecha_inicio.strftime('%Y%m%d%H%M'), fecha_fin.strftime('%Y%m%d%H%M')])
             cursor.execute(query, [fecha_inicio.strftime('%Y%m%d%H%M'), fecha_fin.strftime('%Y%m%d%H%M')])
             citas_data = [
                 {
                     'FechaCita': self.format_char_date(row[0]),
                     'NumeroPaciente': row[1],
-                    'IdMedico':row[2],                    
+                    'IdMedico': row[2],  
+                    'IdCita': row[3],                    
                     'PacienteInfo': self.get_paciente_info(row[1]),
-
                 }
-                 for row in cursor.fetchall()
+                for row in cursor.fetchall()
             ]
 
-        # Transformar la estructura de datos antes de enviar la respuesta
         transformed_data = [
             {
                 "name": f"{cita['PacienteInfo']['Nombre1']} {cita['PacienteInfo']['Nombre2']} {cita['PacienteInfo']['Apellido1']} {cita['PacienteInfo']['Apellido2']}",
                 "phone": f"57{cita['PacienteInfo']['Telefono']}", 
                 "fecha_cita": cita['FechaCita'],
+                "id_paciente": f"{cita['PacienteInfo']['IDPaciente']}",
                 "id_medico": cita['IdMedico'],
+                "id_cita": cita['IdCita'],
                 "nueva_sede": self.get_nueva_sede(cita["IdMedico"])
             }
             for cita in citas_data
+            if self.get_nueva_sede(cita["IdMedico"])  # Solo si la sede es válida
         ]
         transformed_data.sort(key=lambda x: x["id_medico"])
 
@@ -97,6 +97,7 @@ class CitasApiView(APIView):
                     'IDPaciente': None,
                     'Telefono': None,
                 }
+
     def get_nueva_sede(self, id_medico):
         tercer_piso = ["1018424262", "72200727", "1121830894", "79428720", "72199429", "1121833421", "1116240264", "79683666", "7178922"]
         barzal_medicos = ["1010197455", "52477075", "80221101", "52932022", "7827416", "17417997"]
@@ -107,6 +108,7 @@ class CitasApiView(APIView):
             return "tercer_piso"
         else:
             return None
+
             
 ######################## plataforma WOTNOT ##############################
             

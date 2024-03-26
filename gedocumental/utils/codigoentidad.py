@@ -1,6 +1,6 @@
 def obtener_tipos_documentos_por_codigo_entidad():
     tipos_documentos_por_codigo_entidad = {
-       'SAN01': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR','RESULTADO','HISTORIACLINICA',  ],
+        'SAN01': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR','RESULTADO','HISTORIACLINICA',  ],
         'SAN02': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR', 'RESULTADO','HISTORIACLINICA',   ],
         'POL11': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR', 'RESULTADO','HISTORIACLINICA',  ],
         'POL12': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR', 'RESULTADO','HISTORIACLINICA',  ],
@@ -26,7 +26,3 @@ def obtener_tipos_documentos_por_entidad(codigo_entidad):
     tipos_documentos_por_codigo_entidad = obtener_tipos_documentos_por_codigo_entidad()
     return tipos_documentos_por_codigo_entidad.get(codigo_entidad, [])
 
-# Ejemplo de uso:
-codigo_entidad = "DM02"
-tipos_documentos = obtener_tipos_documentos_por_entidad(codigo_entidad)
-print("Tipos de documentos para la entidad", codigo_entidad, ":", tipos_documentos)

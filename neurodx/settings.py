@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 import os
 from pathlib import Path
+import datetime
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,7 +23,7 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['192.168.1.178']  
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 
@@ -42,19 +43,17 @@ INSTALLED_APPS = [
     'gedocumental',
     'login',
     'citas',
-
-    
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  # Asegúrate de que está aquí
+    'django.contrib.sessions.middleware.SessionMiddleware',  
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware',  # Asegúrate de que esté en la posición correcta
+    'corsheaders.middleware.CorsMiddleware', 
 ]
 
 
@@ -85,23 +84,22 @@ WSGI_APPLICATION = 'neurodx.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': '192.168.1.99',
+        'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'antares',
-        'PASSWORD': 'dic2401', 
+        'USER': 'root',
+        'PASSWORD': 'root', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb3',
-            
+            'charset': 'utf8mb4',
         },
     },
      'datosipsndx': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': '192.168.1.99',
+        'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'antares',
-        'PASSWORD': 'dic2401',
+        'USER': 'root',
+        'PASSWORD': 'root',
         'NAME': 'datosipsndx',
         'OPTIONS': {
             'autocommit': True,
@@ -153,17 +151,27 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-ROOT_PATH_FILES_STORAGE = '/home/server'
+ROOT_PATH_FILES_STORAGE = 'C:/Users/loren/Documents'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.TokenAuthentication',
-      
     ],
 }
+CORS_ALLOW_METHODS = [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS"
+]
+
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
@@ -174,6 +182,13 @@ CSRF_COOKIE_SECURE = False
 
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
-  
-    
 ]
+
+CORS_ALLOW_HEADERS = [
+    'Accept',
+    'Accept-Language',
+    'Content-Type',
+    'Authorization',  
+]
+
+JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)

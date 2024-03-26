@@ -2,8 +2,8 @@ import os
 from django.db import models
 from django.dispatch import receiver
 from django.db.models.signals import pre_delete,pre_save,post_save
-
-
+from django.contrib.auth.models import User
+from django.conf import settings
 
 
 
@@ -11,6 +11,7 @@ class ArchivoFacturacion(models.Model):
     IdArchivo = models.AutoField(primary_key=True)
     Admision_id =  models.IntegerField() 
     Tipo = models.CharField(max_length=50, choices=[])
+    Usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
     RutaArchivo = models.FileField(upload_to='GeDocumental/archivosFacturacion', max_length=255, blank=True, null=True)
     NumeroAdmision = models.IntegerField() 
@@ -19,16 +20,14 @@ class ArchivoFacturacion(models.Model):
     RevisionPrimera = models.BooleanField(default=False)
     RevisionSegunda = models.BooleanField(default=False)
     RevisionTercera = models.BooleanField(default=False)
+    
 
     def save(self, *args, **kwargs):
-        # Actualizar el número de admisión antes de guardar
-        #self.NumeroAdmision = self.Admision.Consecutivo
         if self.RutaArchivo:
             self.NombreArchivo = os.path.basename(self.RutaArchivo.name)
         super(ArchivoFacturacion, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        # Eliminar el archivo físico al eliminar el objeto ArchivoFacturacion
         if self.RutaArchivo:
             storage, path = self.RutaArchivo.storage, self.RutaArchivo.path
             storage.delete(path)

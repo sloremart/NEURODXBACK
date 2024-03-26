@@ -296,28 +296,21 @@ class AdmisionTesoreriaView(APIView):
 
         try:
             with transaction.atomic():
-                # Actualizar los campos RevisionSegunda en la base de datos
                 for archivo_data in archivos:
                     archivo_id = archivo_data.get('IdArchivo')
                     revision_segunda = archivo_data.get('RevisionSegunda', False)
 
-                    # Actualizar el campo RevisionSegunda para el archivo actual
                     archivo = ArchivoFacturacion.objects.get(IdArchivo=archivo_id)
                     archivo.RevisionSegunda = revision_segunda
                     archivo.save()
                     print(f"Se actualizó el campo RevisionSegunda para el archivo {archivo_id}")
-
-                # Verificar si todos los archivos tienen RevisionSegunda en True
                 todos_revision_segunda_true = all(archivo_data.get('RevisionSegunda', False) for archivo_data in archivos)
                 print("Todos los archivos tienen RevisionSegunda en True:", todos_revision_segunda_true)
-
-                # Si todos los archivos tienen RevisionSegunda en True, actualizar RevisionTesoreria
                 if todos_revision_segunda_true:
-                    # Filtrar los registros de AuditoriaCuentasMedicas basados en el ID de admisión (consecutivoConsulta)
                     auditoria_cuentas_medicas = AuditoriaCuentasMedicas.objects.filter(AdmisionId=consecutivo_consulta)
                     print("Registros de AuditoriaCuentasMedicas antes de la actualización:", auditoria_cuentas_medicas)
 
-                    # Actualizar RevisionTesoreria en todos los registros filtrados
+                    
                     auditoria_cuentas_medicas.update(RevisionTesoreria=True)
                     print("Registros de AuditoriaCuentasMedicas después de la actualización:", auditoria_cuentas_medicas)
 

@@ -86,8 +86,8 @@ DATABASES = {
         'ENGINE': 'mysql.connector.django',
         'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'antares',
-        'PASSWORD': 'dic2401', 
+        'USER': 'root',
+        'PASSWORD': 'root', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,

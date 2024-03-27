@@ -150,7 +150,7 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-ROOT_PATH_FILES_STORAGE =  '/home/server'
+ROOT_PATH_FILES_STORAGE = '/home/server'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 

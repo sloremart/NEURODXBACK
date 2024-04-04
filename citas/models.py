@@ -62,7 +62,7 @@ class Pacientes(models.Model):
     Apellido2 = models.CharField(max_length=30)
     Nombre1 = models.CharField(max_length=20)
     Nombre2 = models.CharField(max_length=20)
-    TipoAfilacion = models.CharField(max_length=20)
+    TipoAfiliacion = models.CharField(max_length=20)
     TipoUsuario = models.FloatField()
     PACI_ATEN = models.CharField(max_length=20)
     FechaNacimiento = models.DateField()

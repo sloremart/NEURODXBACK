@@ -1,9 +1,11 @@
 from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
+import shutil
+from rest_framework.request import Request as DRFRequest
+from urllib.parse import unquote
 from django.db import IntegrityError, transaction
 from django.db.models.functions import TruncDate
-from sqlite3 import IntegrityError
 from django.db import connections
 from django.http import HttpResponse, JsonResponse
 from rest_framework.views import APIView
@@ -13,8 +15,9 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from gedocumental.modelsFacturacion import Admisiones
 from gedocumental.utils.codigoentidad import obtener_tipos_documentos_por_entidad
+from gedocumental.utils.infoadmsioncuentamedica import obtener_informacion_admision
 from neurodx.settings import MEDIA_ROOT
-from .serializers import   ArchivoFacturacionSerializer, AuditoriaCuentasMedicasSerializer, RevisionCuentaMedicaSerializer
+from .serializers import   ArchivoFacturacionSerializer,  RevisionCuentaMedicaSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
 from django.contrib.auth.models import User
@@ -29,7 +32,7 @@ class GeDocumentalView(APIView):
         with connections['datosipsndx'].cursor() as cursor:
             # Consulta para obtener la información de la admisión
             query_admision = '''
-                SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
+                SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, tRegimen
                 FROM admisiones
                 WHERE Consecutivo = %s
             '''
@@ -44,6 +47,14 @@ class GeDocumentalView(APIView):
                 codigo_entidad = admision_data[2]
                 tipos_documentos = obtener_tipos_documentos_por_entidad(codigo_entidad)
 
+                query_tipo_afiliacion = '''
+                    SELECT TipoAfiliacion
+                    FROM pacientes
+                    WHERE IDPaciente = %s
+                '''
+                cursor.execute(query_tipo_afiliacion, [admision_data[1]])
+                tipo_afiliacion = cursor.fetchone()
+
 
                 
                 transformed_data = {
@@ -51,9 +62,11 @@ class GeDocumentalView(APIView):
                     'IdPaciente': admision_data[1],
                     'CodigoEntidad': admision_data[2],
                     'NombreResponsable': admision_data[3],
-                    'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
+                    'FacturaNo': admision_data[4],
+                    'tRegimen': admision_data[5] if len(admision_data) > 5 else None,
                     'Prefijo': factura_info[0] if factura_info else None,
-                    'TiposDocumentos': tipos_documentos
+                    'TiposDocumentos': tipos_documentos,
+                    'TipoAfiliacion': tipo_afiliacion[0] if tipo_afiliacion else None
                 }
 
                 response_data = {
@@ -96,11 +109,14 @@ class ArchivoUploadView(APIView):
                     for chunk in archivo.chunks():
                         file.write(chunk)
 
+                # Construir la ruta relativa del archivo
+                ruta_relativa = os.path.relpath(archivo_path, settings.MEDIA_ROOT)
+
                 # Crear el objeto ArchivoFacturacion
                 archivo_obj = ArchivoFacturacion(
                     Admision_id=admision.Consecutivo,
                     Tipo=request.data.get('tipoDocumentos', None),
-                    RutaArchivo=archivo_path,
+                    RutaArchivo=ruta_relativa,
                     FechaCreacionArchivo=TruncDate(datetime.now()),
                     Usuario_id=user_id  
                 )
@@ -507,27 +523,63 @@ class FiltroTesoreria(APIView):
         return Response(response_data)
 
 
-class CodigoListView(APIView):
-    def get(self, request, format=None):
-        codigos = [
-            'SAN01',
-            'SAN02',
-            'POL11',
-            'POL12',
-            'PML01',
-            'COM01',
-            'CAJACO',
-            'CAJASU',
-            'SAL01',
-            'CAP01',
-            'UNA01',
-            'DM02',
-            'EQV01',
-            'PAR01',
-            'CHM01',
-            'CHM02',
-            'COL01',
-            'MES01',
-            'SAL01'
-        ]
-        return Response(codigos)
+###### RADICACION - CUENTAS MEDICAS #####
+import os
+
+def crear_carpeta_y_copiar_archivos_view(request, numero_admision):
+    try:
+        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        if admision_response.status_code == 200:
+            admision_data = admision_response.data.get('data')
+            factura_numero = admision_data.get('FacturaNo')
+            t_regimen = admision_data.get('tRegimen')
+            if factura_numero is not None and t_regimen is not None:
+                archivos_response = archivos_por_admision(request, numero_admision)
+                if archivos_response.status_code == 200:
+                    archivos_data = archivos_response.data.get('data', [])
+                    for archivo in archivos_data:
+                        tipo_archivo = archivo.get('Tipo')
+                        ruta_origen_relative = archivo.get('RutaArchivo')  
+                        if t_regimen == 1:
+                            carpeta_tipo_archivo = 'contributivo'
+                        else:
+                            carpeta_tipo_archivo = tipo_archivo
+                        nombre_archivo = f"{tipo_archivo}{factura_numero}.pdf"
+                        print("Ruta de origen relativa:", ruta_origen_relative)  
+                        ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
+                        print("Ruta de origen absoluta:", ruta_origen) 
+                        print("Ruta de origen:", ruta_origen) 
+                       
+                        if os.path.exists(ruta_origen):
+                            carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', carpeta_tipo_archivo)                          
+                            if not os.path.exists(carpeta_path):
+                                os.makedirs(carpeta_path)
+                            ruta_destino = os.path.join(carpeta_path, nombre_archivo)  # Cambia el nombre del archivo en el destino
+                            shutil.copy(ruta_origen, ruta_destino)  
+                            print("Archivo copiado exitosamente.")  
+                        else:
+                            raise FileNotFoundError(f"La ruta de origen '{ruta_origen}' no es válida")
+                    
+                    response_data = {
+                        "success": True,
+                        "detail": f"Archivos copiados y carpetas creadas para la admisión con número {numero_admision}"
+                    }
+                    return JsonResponse(response_data, status=200)
+                else:
+                    return archivos_response
+            else:
+                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+        else:
+            return admision_response
+    except ArchivoFacturacion.DoesNotExist:
+        response_data = {
+            "success": False,
+            "detail": f"No se encontraron archivos para la admisión con número {numero_admision}"
+        }
+        return JsonResponse(response_data, status=404)
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": str(e)
+        }
+        return JsonResponse(response_data, status=500)

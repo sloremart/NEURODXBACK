@@ -5,7 +5,7 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView,  FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, admisiones_con_observaciones_por_usuario, archivos_por_admision,  downloadFile
+from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, admisiones_con_observaciones_por_usuario, archivos_por_admision, crear_carpeta_y_copiar_archivos_view,  downloadFile
 
 
 urlpatterns = [
@@ -24,6 +24,8 @@ urlpatterns = [
     path('lista_codigo_entidad/', CodigoListView.as_view()),
     path('archivos_por_usuario_observacion/<int:usuario_id>/', admisiones_con_observaciones_por_usuario, name='archivos_por_usuario'),
     path('filtro_tesoreria/', FiltroTesoreria.as_view(), name='filtro_tesoreria'),
+    path('radicar_cuentamedica/<int:numero_admision>/', crear_carpeta_y_copiar_archivos_view, name='informacion_admision_y_archivos'),  # Agrega la nueva ruta
+
 
 ]
 

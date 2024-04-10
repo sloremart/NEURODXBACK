@@ -1,3 +1,7 @@
+import os
+from django.conf import settings
+import urllib.parse
+
 def obtener_tipos_documentos_por_codigo_entidad():
     tipos_documentos_por_codigo_entidad = {
         'SAN01': [ 'ORDEN', 'FACTURA', 'COMPROBANTE','AUTORIZACION','VALIDADOR','RESULTADO','HISTORIACLINICA',  ],
@@ -25,4 +29,5 @@ def obtener_tipos_documentos_por_codigo_entidad():
 def obtener_tipos_documentos_por_entidad(codigo_entidad):
     tipos_documentos_por_codigo_entidad = obtener_tipos_documentos_por_codigo_entidad()
     return tipos_documentos_por_codigo_entidad.get(codigo_entidad, [])
+
 

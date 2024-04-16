@@ -538,7 +538,7 @@ def radicar_compensar_view(request, numero_admision):
                     for archivo in archivos_data:
                         tipo_archivo = archivo.get('Tipo')
                         ruta_origen_relative = archivo.get('RutaArchivo')  
-                        if t_regimen == 1:
+                        if t_regimen == 1 or t_regimen == 0:
                             carpeta_tipo_archivo = 'CONTRIBUTIVO'
                         elif t_regimen == 2:
                             carpeta_tipo_archivo = 'SUBSIDIADO'
@@ -638,14 +638,12 @@ def radicar_salud_total_view(request, numero_admision):
                 if archivos_response.status_code == 200:
                     archivos_data = archivos_response.data.get('data', [])
                     
-                    if t_regimen == 1:
-                        carpeta_regimen = 'CONTRIBUTIVO'
-                    elif t_regimen == 2:
-                        carpeta_regimen = 'SUBSIDIADO'
+                    if t_regimen == 1 or t_regimen == 0:
+                        carpeta_tipo_archivo = 'CONTRIBUTIVO'
                     else:
-                        raise ValueError("El tipo de régimen no es válido")
+                        carpeta_tipo_archivo = 'SUBSIDIADO'
 
-                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SALUDTOTAL', carpeta_regimen)
+                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SALUDTOTAL', carpeta_tipo_archivo)
                     if not os.path.exists(carpeta_path):
                         os.makedirs(carpeta_path)
 
@@ -706,7 +704,6 @@ def radicar_salud_total_view(request, numero_admision):
 
 #### SANITAS EVENTO
 
-
 def radicar_sanitas_evento_view(request, numero_admision):
     try:
         admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
@@ -736,8 +733,17 @@ def radicar_sanitas_evento_view(request, numero_admision):
                                 ruta_origen_relative = archivo.get('RutaArchivo')
                                 ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
                                 merger.append(ruta_origen)
-                        carpeta_tipo_archivo = 'CONTRIBUTIVO' if t_regimen == 1 else 'SUBSIDIADO'
-                        ruta_destino_merged = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SANITASEVENTO', carpeta_tipo_archivo, f"{prefijo}{factura_numero}.pdf")
+                            if t_regimen == 1 or t_regimen == 0:
+                                carpeta_tipo_archivo = 'CONTRIBUTIVO'
+                            else:
+                                carpeta_tipo_archivo = 'SUBSIDIADO'
+                        
+                        carpeta_prefijo_numero_factura = f"{prefijo}{factura_numero}"
+                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SANITASEVENTO', carpeta_tipo_archivo, carpeta_prefijo_numero_factura)
+                        if not os.path.exists(carpeta_nombre_archivo):
+                            os.makedirs(carpeta_nombre_archivo)
+
+                        ruta_destino_merged = os.path.join(carpeta_nombre_archivo, f"{prefijo}{factura_numero}.pdf")
                         merger.write(ruta_destino_merged)
                         merger.close()
 
@@ -767,9 +773,7 @@ def radicar_sanitas_evento_view(request, numero_admision):
         }
         return JsonResponse(response_data, status=500)
 
-
 ##### COLSANITAS###
-
 
 def radicar_colsanitas_view(request, numero_admision):
     try:
@@ -794,14 +798,18 @@ def radicar_colsanitas_view(request, numero_admision):
                         if tipo_archivo == 'FACTURA':
                             nombre_archivo = f"{prefijo}{factura_numero}.pdf"
                         else:
-                            if tipo_archivo == 'AUTORIZACION':
+                            if tipo_archivo == 'COMPROBANTE':
+                                sop = 'SOP_1'
+                            elif tipo_archivo == 'AUTORIZACION':
                                 sop = 'SOP_2'
                             elif tipo_archivo == 'ORDEN':
-                                sop = 'SOP_3'
+                                sop ='SOP_3'
+                            elif tipo_archivo == 'ADICIONALES':
+                                sop = 'SOP_4'
                             elif tipo_archivo == 'RESULTADO':
-                                sop ='SOP_4'
-                            elif tipo_archivo == 'COMPROBANTE':
                                 sop = 'SOP_5'
+                            elif tipo_archivo == 'HISTORIACLINICA':
+                                sop = 'SOP_6'
                             else:
                                 sop = 0  # Otra opción si no se encuentra el tipo de documento
 
@@ -825,6 +833,142 @@ def radicar_colsanitas_view(request, numero_admision):
                         "detail": f"Archivos copiados y carpetas creadas para la admisión con número {numero_admision}"
                     }
                     return JsonResponse(response_data, status=200)
+                else:
+                    return archivos_response
+            else:
+                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+        else:
+            return admision_response
+    except ArchivoFacturacion.DoesNotExist:
+        response_data = {
+            "success": False,
+            "detail": f"No se encontraron archivos para la admisión con número {numero_admision}"
+        }
+        return JsonResponse(response_data, status=404)
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": str(e)
+        }
+        return JsonResponse(response_data, status=500)
+    
+#### CAPITAL SALUD #####
+
+
+
+def radicar_capitalsalud_view(request, numero_admision):
+    try:
+        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        if admision_response.status_code == 200:
+            admision_data = admision_response.data.get('data')
+            factura_numero = admision_data.get('FacturaNo')
+            t_regimen = admision_data.get('tRegimen')
+            prefijo = admision_data.get('Prefijo')
+            if factura_numero is not None and t_regimen is not None:
+                archivos_response = archivos_por_admision(request, numero_admision)
+                if archivos_response.status_code == 200:
+                    archivos_data = archivos_response.data.get('data', [])  
+                    factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
+
+                    if factura_archivo:
+                        tipo_archivo = factura_archivo.get('Tipo')
+                        ruta_origen_relative = factura_archivo.get('RutaArchivo')
+                        ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
+
+                        # Crear un nuevo documento PDF
+                        merger = PdfMerger()
+                        merger.append(ruta_origen)
+
+                        # Agregar los demás archivos al nuevo documento
+                        for archivo in archivos_data:
+                            if archivo.get('Tipo') != 'FACTURA':
+                                ruta_origen_relative = archivo.get('RutaArchivo')
+                                ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
+                                merger.append(ruta_origen)
+                        
+                        ruta_destino_merged = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'CAPITALSALUD', f"{prefijo}{factura_numero}.pdf")
+                        merger.write(ruta_destino_merged)
+                        merger.close()
+
+                        response_data = {
+                            "success": True,
+                            "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
+                        }
+                        return JsonResponse(response_data, status=200)
+                    else:
+                        raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
+                else:
+                    return archivos_response
+            else:
+                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+        else:
+            return admision_response
+    except ArchivoFacturacion.DoesNotExist:
+        response_data = {
+            "success": False,
+            "detail": f"No se encontraron archivos para la admisión con número {numero_admision}"
+        }
+        return JsonResponse(response_data, status=404)
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": str(e)
+        }
+        return JsonResponse(response_data, status=500)
+    
+
+##### OTROS #############
+
+def radicar_other_view(request, numero_admision):
+    try:
+        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        if admision_response.status_code == 200:
+            admision_data = admision_response.data.get('data')
+            factura_numero = admision_data.get('FacturaNo')
+            t_regimen = admision_data.get('tRegimen')
+            prefijo = admision_data.get('Prefijo')
+            if factura_numero is not None and t_regimen is not None:
+                archivos_response = archivos_por_admision(request, numero_admision)
+                if archivos_response.status_code == 200:
+                    archivos_data = archivos_response.data.get('data', [])  
+                    factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
+
+                    if factura_archivo:
+                        tipo_archivo = factura_archivo.get('Tipo')
+                        ruta_origen_relative = factura_archivo.get('RutaArchivo')
+                        ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
+
+                        # Crear un nuevo documento PDF
+                        merger = PdfMerger()
+                        merger.append(ruta_origen)
+
+                        # Agregar los demás archivos al nuevo documento
+                        for archivo in archivos_data:
+                            if archivo.get('Tipo') != 'FACTURA':
+                                ruta_origen_relative = archivo.get('RutaArchivo')
+                                ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
+                                merger.append(ruta_origen)
+                            if t_regimen == 1 or t_regimen == 0:
+                                carpeta_tipo_archivo = 'CONTRIBUTIVO'
+                            else:
+                                carpeta_tipo_archivo = 'SUBSIDIADO'
+
+                        # Crear la carpeta según el prefijo si no existe
+                        carpeta_prefijo = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'CAJACOPI', carpeta_tipo_archivo, prefijo)
+                        if not os.path.exists(carpeta_prefijo):
+                            os.makedirs(carpeta_prefijo)
+
+                        ruta_destino_merged = os.path.join(carpeta_prefijo, f"{prefijo}{factura_numero}.pdf")
+                        merger.write(ruta_destino_merged)
+                        merger.close()
+
+                        response_data = {
+                            "success": True,
+                            "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
+                        }
+                        return JsonResponse(response_data, status=200)
+                    else:
+                        raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
                 else:
                     return archivos_response
             else:

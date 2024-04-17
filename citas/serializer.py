@@ -7,7 +7,7 @@ from .models import Pacientes
 class PacienteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pacientes
-        fields = ['Nombre1', 'Nombre2', 'Apellido1', 'Apellido2', 'IDPaciente', 'Telefono']
+        fields = ['Nombre1', 'Nombre2', 'Apellido1', 'Apellido2', 'IDPaciente', 'Telefono', 'TipoAfilacion']
 
 class CitaSerializer(serializers.ModelSerializer):
     paciente = PacienteSerializer(source='NumeroPaciente', read_only=True)

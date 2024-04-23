@@ -96,7 +96,7 @@ class ArchivoUploadView(APIView):
             admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
             # Crear el directorio para guardar los archivos
-            folder_path = os.path.join(settings.MEDIA_ROOT, 'neurodx', 'archivosFacturacion', str(admision.Consecutivo))
+            folder_path = os.path.join(settings.MEDIA_ROOT, 'Gedocumental', 'archivosFacturacion', str(admision.Consecutivo))
             os.makedirs(folder_path, exist_ok=True)
 
             archivos = request.FILES.getlist('files')
@@ -113,11 +113,13 @@ class ArchivoUploadView(APIView):
                 ruta_relativa = os.path.relpath(archivo_path, settings.MEDIA_ROOT)
 
                 # Crear el objeto ArchivoFacturacion
+                fecha_creacion_archivo = datetime.now().replace(second=0, microsecond=0)
+                fecha_formateada = fecha_creacion_archivo.strftime('%Y-%m-%d %H:%M:%S')  # Formatear la fecha sin segundos ni milisegundos
                 archivo_obj = ArchivoFacturacion(
                     Admision_id=admision.Consecutivo,
                     Tipo=request.data.get('tipoDocumentos', None),
                     RutaArchivo=ruta_relativa,
-                    FechaCreacionArchivo=TruncDate(datetime.now()),
+                    FechaCreacionArchivo=fecha_formateada,
                     Usuario_id=user_id  
                 )
                 archivo_obj.NumeroAdmision = admision.Consecutivo

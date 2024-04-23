@@ -344,54 +344,54 @@ class AdmisionTesoreriaView(APIView):
 
 
 from datetime import datetime, timedelta
-
 class FiltroAuditoriaCuentasMedicas(APIView):
     def get(self, request):
         fecha_creacion_str = request.query_params.get('FechaCreacion', None)
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
         codigo_entidad = request.query_params.get('CodigoEntidad', None)
-
-        queryset = AuditoriaCuentasMedicas.objects.all()
-
+        
         if fecha_creacion_str:
             fecha_creacion = datetime.strptime(fecha_creacion_str, '%Y-%m-%d')
             fecha_inicio = fecha_creacion.replace(hour=0, minute=0, second=0)
             fecha_fin = fecha_inicio + timedelta(days=1) - timedelta(seconds=1)
-            archivos_facturacion = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__range=(fecha_inicio, fecha_fin))
+            archivos_facturacion = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__date=fecha_creacion)
             admision_ids = archivos_facturacion.values_list('Admision_id', flat=True)
-            queryset = queryset.filter(AdmisionId__in=admision_ids)
+            queryset = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
+        else:
+            queryset = AuditoriaCuentasMedicas.objects.all()
         
         response_data = []
 
         with connections['datosipsndx'].cursor() as cursor:
             for auditoria in queryset:
                 cursor.execute('''
-                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
+                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, CedulaResponsable
                     FROM admisiones
                     WHERE Consecutivo = %s
                 ''', [auditoria.AdmisionId])
                 admision_data = cursor.fetchone()
 
                 if admision_data:
-                    if (not revision_cuentas_medicas or bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas) and \
-                       (not codigo_entidad or codigo_entidad == admision_data[2]):
-                        data = {
-                            'AdmisionId': auditoria.AdmisionId,
-                            'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
-                            'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
-                            'Observacion': auditoria.Observacion,
-                            'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
-                            'RevisionTesoreria': auditoria.RevisionTesoreria,
-                            'Consecutivo': admision_data[0],
-                            'IdPaciente': admision_data[1],
-                            'CodigoEntidad': admision_data[2],
-                            'NombreResponsable': admision_data[3],
-                            'CedulaResponsable': admision_data[4],
-                            'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
-                        }
-                        response_data.append(data)
+                    if (revision_cuentas_medicas is None) or (bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas):
+                        if not codigo_entidad or codigo_entidad == admision_data[2]:
+                            data = {
+                                'AdmisionId': auditoria.AdmisionId,
+                                'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
+                                'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
+                                'Observacion': auditoria.Observacion,
+                                'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                                'RevisionTesoreria': auditoria.RevisionTesoreria,
+                                'Consecutivo': admision_data[0],
+                                'IdPaciente': admision_data[1],
+                                'CodigoEntidad': admision_data[2],
+                                'NombreResponsable': admision_data[3],
+                                'CedulaResponsable': admision_data[4],
+                                'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
+                            }
+                            response_data.append(data)
 
         return Response(response_data)
+
 
 
 

@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'gedocumental',
     'login',
     'citas',
+    'controlfacturacion',
 ]
 
 MIDDLEWARE = [

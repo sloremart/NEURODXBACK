@@ -395,6 +395,7 @@ class FiltroAuditoriaCuentasMedicas(APIView):
         return Response(response_data)
 
 
+
 class CodigoListView(APIView):
     def get(self, request, format=None):
         codigos = [

@@ -6,6 +6,7 @@ from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
 from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, TablaRadicacion, admisiones_con_observaciones_por_usuario, archivos_por_admision, radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
+from controlfacturacion.views import CiPxApiView, CitasPxApiView, FiltroDetalleFacturaPorFecha, FiltroFacturaPorFecha, CitasSubcentroApiView
 
 
 urlpatterns = [
@@ -31,7 +32,11 @@ urlpatterns = [
     path('radicar_capital_salud/<int:numero_admision>/', radicar_capitalsalud_view, ),  
     path('radicar_otros/<int:numero_admision>/', radicar_other_view, ),  
     path('tabla_radicacion/', TablaRadicacion.as_view(), name='tabla_radicacion'),
-
+    path('detallefacturacion/', FiltroDetalleFacturaPorFecha.as_view(), name='facturacion'),
+    path('facturacion/', FiltroFacturaPorFecha.as_view(), name='facturacion'),
+    path('citaspx/', CitasPxApiView.as_view()),  # CITAS
+    path('consolidado_especialidad/', CiPxApiView.as_view()),  # CITAS
+    path('consolidado_subcentro/', CitasSubcentroApiView.as_view()),
 ]
 
 

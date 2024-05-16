@@ -22,7 +22,7 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 
 DEBUG = True
-ALLOWED_HOSTS = ['192.168.1.178']  
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 
@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'gedocumental',
     'login',
     'citas',
+    'controlfacturacion',
 ]
 
 MIDDLEWARE = [
@@ -77,32 +78,32 @@ TEMPLATES = [
 WSGI_APPLICATION = 'neurodx.wsgi.application'
 
 
-################ DESPLIEGUE 
+
 
 
 DATABASES = {
     'default': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': '192.168.1.99',
+        'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'antares',
-        'PASSWORD': 'dic2401', 
+        'USER': 'root',
+        'PASSWORD': 'root', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb3',
+            'charset': 'utf8mb4',
         },
     },
      'datosipsndx': {
         'ENGINE': 'mysql.connector.django',
-        'HOST': '192.168.1.99',
+        'HOST': 'localhost',
         'PORT': '3306',
-        'USER': 'antares',
-        'PASSWORD': 'dic2401',
+        'USER': 'root',
+        'PASSWORD': 'root',
         'NAME': 'datosipsndx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb3',
+            'charset': 'utf8mb4',
         },
     },
 }
@@ -150,7 +151,7 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-ROOT_PATH_FILES_STORAGE = '/home/server'
+ROOT_PATH_FILES_STORAGE = 'C:/Users/loren/Documents/Proyectos'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 

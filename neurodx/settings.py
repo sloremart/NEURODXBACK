@@ -174,7 +174,7 @@ CORS_ALLOW_METHODS = [
 
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  
+    "http://192.168.1.178:3000" 
 ]
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False

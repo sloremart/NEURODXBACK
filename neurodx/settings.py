@@ -83,7 +83,7 @@ WSGI_APPLICATION = 'neurodx.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'mysql.connector.django',
+        'ENGINE': 'django.db.backends.mysql',
         'HOST': '192.168.1.99',
         'PORT': '3306',
         'USER': 'antares',
@@ -95,7 +95,7 @@ DATABASES = {
         },
     },
      'datosipsndx': {
-        'ENGINE': 'mysql.connector.django',
+       'ENGINE': 'django.db.backends.mysql',
         'HOST': '192.168.1.99',
         'PORT': '3306',
         'USER': 'antares',
@@ -174,7 +174,7 @@ CORS_ALLOW_METHODS = [
 
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
-    "http://192.168.1.178:3000" 
+     "http://localhost:3000",
 ]
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False

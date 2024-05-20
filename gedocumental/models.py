@@ -89,11 +89,3 @@ def create_observacion_archivo(sender, instance, created, **kwargs):
         print("Instancia de ObservacionesArchivos creada:", observacion_obj)
 
 
-
-
-class TiposDocumentos(models.Model):
-    CodigoEntidad = models.CharField(max_length=20, unique=True)
-    Documentos = models.TextField() 
-
-    def __str__(self):
-        return self.CodigoEntidad

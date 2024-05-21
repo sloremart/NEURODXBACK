@@ -1,5 +1,4 @@
 from datetime import datetime
-import sys
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
@@ -28,9 +27,8 @@ import os
 
 
 
-@api_view(['GET'])
-def ge_documental_view(request, consecutivo):
-    if request.method == 'GET':
+class GeDocumentalView(APIView):
+    def get(self, request, consecutivo, format=None):
         with connections['datosipsndx'].cursor() as cursor:
             # Consulta para obtener la información de la admisión
             query_admision = '''
@@ -57,6 +55,8 @@ def ge_documental_view(request, consecutivo):
                 cursor.execute(query_tipo_afiliacion, [admision_data[1]])
                 tipo_afiliacion = cursor.fetchone()
 
+
+                
                 transformed_data = {
                     'Consecutivo': admision_data[0],
                     'IdPaciente': admision_data[1],

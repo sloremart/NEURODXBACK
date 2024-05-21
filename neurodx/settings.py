@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 import datetime
-
+from corsheaders.defaults import default_methods, default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -48,7 +48,6 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'corsheaders.middleware.CorsMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',  
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -127,7 +126,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-CORS_ALLOW_ALL_ORIGINS = False
+# CORS_ALLOW_ALL_ORIGINS = False
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
@@ -164,20 +163,16 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
 }
-CORS_ALLOW_METHODS = [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS"
-]
-
-AUTH_USER_MODEL = 'login.CustomUser'
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS  = [
     "http://localhost:3000",
     "http://192.168.1.178:3000",
 ]
+CORS_ALLOW_METHODS = (
+    *default_methods,
+)
+
+AUTH_USER_MODEL = 'login.CustomUser'
+
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False
 
@@ -186,14 +181,11 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-CORS_ALLOW_HEADERS = [
-    'Accept',
-    'Accept-Language',
-    'Content-Type',
-    'Authorization',  
-    'Access-Control-Allow-Origins',
-    'Access-Control-Allow-Methods'
-]
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "my-custom-header",
+)
+CORS_ALLOW_CREDENTIALS = False
 
 JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)
 

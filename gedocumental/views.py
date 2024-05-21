@@ -28,10 +28,9 @@ import os
 
 
 
-class GeDocumentalView(APIView):
-    def get(self, request, consecutivo, format=None):
-        print('mi_variable')
-        sys.exit()
+@api_view(['GET'])
+def ge_documental_view(request, consecutivo):
+    if request.method == 'GET':
         with connections['datosipsndx'].cursor() as cursor:
             # Consulta para obtener la información de la admisión
             query_admision = '''
@@ -58,8 +57,6 @@ class GeDocumentalView(APIView):
                 cursor.execute(query_tipo_afiliacion, [admision_data[1]])
                 tipo_afiliacion = cursor.fetchone()
 
-
-                
                 transformed_data = {
                     'Consecutivo': admision_data[0],
                     'IdPaciente': admision_data[1],

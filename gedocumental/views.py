@@ -1,4 +1,5 @@
 from datetime import datetime
+import sys
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
@@ -29,6 +30,8 @@ import os
 
 class GeDocumentalView(APIView):
     def get(self, request, consecutivo, format=None):
+        print('mi_variable')
+        sys.exit()
         with connections['datosipsndx'].cursor() as cursor:
             # Consulta para obtener la información de la admisión
             query_admision = '''

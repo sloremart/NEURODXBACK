@@ -13,7 +13,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 import os
 from pathlib import Path
 import datetime
-
+from corsheaders.defaults import default_methods, default_headers
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -21,8 +21,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!'
 
 
-DEBUG = True
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+DEBUG = False
+ALLOWED_HOSTS = ['192.168.1.178', 'localhost']  
 
 
 
@@ -46,6 +46,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware', 
     'middleware.cors.CorsMiddleware', 
@@ -78,32 +79,32 @@ TEMPLATES = [
 WSGI_APPLICATION = 'neurodx.wsgi.application'
 
 
-
+################ DESPLIEGUE 
 
 
 DATABASES = {
     'default': {
-        'ENGINE': 'mysql.connector.django',
-        'HOST': 'localhost',
+        'ENGINE': 'django.db.backends.mysql',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root', 
+        'USER': 'antares',
+        'PASSWORD': 'dic2401', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
         },
     },
      'datosipsndx': {
-        'ENGINE': 'mysql.connector.django',
-        'HOST': 'localhost',
+       'ENGINE': 'django.db.backends.mysql',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root',
+        'USER': 'antares',
+        'PASSWORD': 'dic2401',
         'NAME': 'datosipsndx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
         },
     },
 }
@@ -126,7 +127,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_ALL_ORIGINS = False
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
@@ -151,7 +152,7 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-ROOT_PATH_FILES_STORAGE = 'C:/Users/loren/Documents/Proyectos'
+ROOT_PATH_FILES_STORAGE = '/home/server'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
@@ -163,19 +164,16 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
     ],
 }
-CORS_ALLOW_METHODS = [
-    "GET",
-    "POST",
-    "PUT",
-    "PATCH",
-    "DELETE",
-    "OPTIONS"
+CORS_ALLOWED_ORIGINS  = [
+    "http://localhost:3000",
+    "http://192.168.1.178:3000",
 ]
+CORS_ALLOW_METHODS = (
+    *default_methods,
+)
 
 AUTH_USER_MODEL = 'login.CustomUser'
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  
-]
+
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False
 
@@ -184,11 +182,11 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
-CORS_ALLOW_HEADERS = [
-    'Accept',
-    'Accept-Language',
-    'Content-Type',
-    'Authorization',  
-]
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "my-custom-header",
+)
+CORS_ALLOW_CREDENTIALS = False
 
 JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)
+

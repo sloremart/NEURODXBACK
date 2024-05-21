@@ -22,7 +22,7 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 
 DEBUG = False
-ALLOWED_HOSTS = ['192.168.1.178']  
+ALLOWED_HOSTS = ['192.168.1.178', 'localhost']  
 
 
 
@@ -46,7 +46,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware', 
+#    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',  
     'django.middleware.common.CommonMiddleware',
@@ -126,7 +126,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-#CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
@@ -190,6 +190,8 @@ CORS_ALLOW_HEADERS = [
     'Accept-Language',
     'Content-Type',
     'Authorization',  
+    'Access-Control-Allow-Origins',
+    'Access-Control-Allow-Methods'
 ]
 
 JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)

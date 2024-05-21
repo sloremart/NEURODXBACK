@@ -5,7 +5,7 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, TablaRadicacion, admisiones_con_observaciones_por_usuario, archivos_por_admision, radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
+from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, TablaRadicacion, admisiones_con_observaciones_por_usuario, archivos_por_admision, ge_documental_view, radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
 from controlfacturacion.views import CiPxApiView, CitasPxApiView, FiltroDetalleFacturaPorFecha, FiltroFacturaPorFecha, CitasSubcentroApiView
 
 
@@ -14,7 +14,8 @@ urlpatterns = [
     path('lista-citas/', CitasApiView.as_view()),  # CITAS
     path('login/', LoginView.as_view()),
     path('register/', RegisterView.as_view()),
-    path('admisiones/<int:consecutivo>/', GeDocumentalView.as_view()),  # ADMISIONES
+    path('admisiones/<int:consecutivo>/', ge_documental_view, name='ge_documental'),
+    #path('admisiones/<int:consecutivo>/', GeDocumentalView.as_view()),  # ADMISIONES
     path('archivo_upload/<str:consecutivo>/', ArchivoUploadView.as_view()),  # ARCHIVOS
     path('archivos_por_admision/<int:numero_admision>/', archivos_por_admision, name='archivos_por_admision'),
     path('descargar/<int:id_archivo>/', downloadFile, name='descargar_archivo'),

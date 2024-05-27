@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from datetime import datetime, timedelta
-from controlfacturacion.serializers import DetalleFacturaSerializer
-from .models import DetalleFactura, PxCita
-from django.http import JsonResponse
+from controlfacturacion.serializers import CodigoSoatSerializer, DetalleFacturaSerializer
+from .models import DetalleFactura, CodigoSoat
+from rest_framework import generics
 from rest_framework import serializers
 from rest_framework.views import APIView
 from .models import DetalleFactura
@@ -124,13 +124,6 @@ class FiltroFacturaPorFecha(APIView):
         else:
             return Response({'error': 'Se necesita proporcionar una fecha de servicio.'}, status=400)
         
-
-
-
-
-
-
-
 class CitasPxApiView(APIView):
     def get(self, request, format=None):
         fecha_inicio_str = request.GET.get('fecha_inicio', None)
@@ -165,12 +158,14 @@ class CitasPxApiView(APIView):
         fecha_fin = datetime.combine(fecha, datetime.max.time())
         with connections['datosipsndx'].cursor() as cursor:
             query = '''
-                SELECT DISTINCT cita.IdCita, pxcita.VrUnitario, pxcita.Cantidad, pxcita.CUPS, cups.RegistroNo, cups.Servicio, soat.DescripcionCUPS
+                SELECT DISTINCT cita.IdCita, pxcita.VrUnitario, pxcita.Cantidad, pxcita.CUPS, cups.RegistroNo,
+                cups.Servicio, soat.DescripcionCUPS, cita.Entidad
                 FROM citas AS cita
                 JOIN pxcita ON cita.IdCita = pxcita.IdCita
                 LEFT JOIN cupsxservicio AS cups ON pxcita.CUPS = cups.CUPS
                 LEFT JOIN codigossoat AS soat ON pxcita.CUPS = soat.CodigoCUPS
                 WHERE cita.FeCita BETWEEN %s AND %s AND cita.Cancelada = 0
+                AND cita.Entidad = 'SAN02' AND pxcita.CUPS IN ('890274', '890374')
             '''
 
             cursor.execute(query, [fecha_inicio, fecha_fin])
@@ -187,28 +182,53 @@ class CitasPxApiView(APIView):
                     'RegistroNo': row[4],
                     'Servicio': row[5],
                     'DescripcionCUPS': row[6],
+                    'Entidad': row[7],
                     'ValorTotal': row[1] * row[2]
                 }
                 citas_data.append(cita)
-        
-        # Procesamiento adicional para filtrar los CUPS duplicados por cada cita
-        citas_data_filtered = []
-        processed_ids = set()  # Para realizar seguimiento de los IdCita procesados
 
-        for cita in citas_data:
-            id_cita = cita['IdCita']
-            cups = cita['CUPS']
-            if id_cita not in processed_ids:
-                citas_data_filtered.append(cita)
-                processed_ids.add(id_cita)
+        # Filtrar citas duplicadas por IdCita y CUPS
+        citas_data = self.filter_duplicate_citas(citas_data)
+
+        # Aplicar ajuste de precios a las citas
+        citas_ajustadas = self.adjust_prices(citas_data)
+
+        return citas_ajustadas
+
+    def filter_duplicate_citas(self, citas):
+        unique_citas = {}
+        for cita in citas:
+            key = (cita['IdCita'], cita['CUPS'])
+            if key not in unique_citas:
+                unique_citas[key] = cita
+        return list(unique_citas.values())
+
+    def adjust_prices(self, citas):
+        CANTIDAD_MINIMA = 325
+        CANTIDAD_REFERENCIA = 361
+        CANTIDAD_MAXIMA = 397
+        VALOR_TOTAL_REFERENCIA = 19335160
+
+        # Ordenar las citas por IdCita o cualquier otro criterio si es necesario
+        citas.sort(key=lambda x: x['IdCita'])
+
+        # Calcular los nuevos valores unitarios para las citas
+        for i, cita in enumerate(citas, start=1):
+            if i <= CANTIDAD_MINIMA:
+                cita['VrUnitario'] = VALOR_TOTAL_REFERENCIA / CANTIDAD_MINIMA
+            elif i <= CANTIDAD_REFERENCIA:
+                cita['VrUnitario'] = VALOR_TOTAL_REFERENCIA / CANTIDAD_REFERENCIA
+            elif i <= CANTIDAD_MAXIMA:
+                cita['VrUnitario'] = VALOR_TOTAL_REFERENCIA / CANTIDAD_MAXIMA
             else:
-                # Verificar si el CUPS ya ha sido registrado para esta cita
-                cups_set = set(cita['CUPS'] for cita in citas_data_filtered if cita['IdCita'] == id_cita)
-                if cups not in cups_set:
-                    citas_data_filtered.append(cita)
+                # En caso de que las citas superen la cantidad máxima, mantenemos el valor más bajo calculado
+                cita['VrUnitario'] = VALOR_TOTAL_REFERENCIA / CANTIDAD_MAXIMA
 
-        return citas_data_filtered
+            # Actualizar el valor total basado en la nueva tarifa
+            cita['ValorTotal'] = cita['VrUnitario'] * cita['Cantidad']
+            print(f"Índice: {i}, IdCita: {cita['IdCita']}, VrUnitario: {cita['VrUnitario']}, ValorTotal: {cita['ValorTotal']}")
 
+        return citas
 
 
 
@@ -445,3 +465,190 @@ class CitasSubcentroApiView(APIView):
                 consolidated_data[categoria] += cita['ValorTotal']
 
         return consolidated_data
+    
+
+
+##### SERVICIO PARA AGENDAS#######
+class AgendasView(APIView):
+    def get(self, request, format=None):
+        fecha_inicio_str = request.GET.get('fecha_inicio', None)
+        fecha_fin_str = request.GET.get('fecha_fin', None)
+        
+        if fecha_inicio_str and fecha_fin_str:
+            try:
+                fecha_inicio = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date()
+                fecha_fin = datetime.strptime(fecha_fin_str, '%Y-%m-%d').date()
+            except ValueError:
+                return Response({"error": "Formato de fecha inválido"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({"error": "Se requieren las fechas de inicio y fin"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        citas_por_rango = {}
+        delta = timedelta(days=1)
+        fecha_actual = fecha_inicio
+        while fecha_actual <= fecha_fin:
+            citas_por_rango[fecha_actual.strftime('%Y-%m-%d')] = self.get_citas_por_dia(fecha_actual)
+            fecha_actual += delta
+
+        consolidated_data = self.calculate_consolidated_data(citas_por_rango)
+
+        response_data = {
+            "success": True,
+            "detail": "Las citas programadas por día en el rango de fechas son las siguientes",
+            "data": citas_por_rango,
+            "consolidated_data": consolidated_data
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    def get_citas_por_dia(self, fecha):
+        fecha_inicio = datetime.combine(fecha, datetime.min.time())
+        fecha_fin = datetime.combine(fecha, datetime.max.time())
+        with connections['datosipsndx'].cursor() as cursor:
+            query = '''
+                SELECT DISTINCT cita.IdCita, cita.Agenda, pxcita.VrUnitario, pxcita.Cantidad, pxcita.CUPS, 
+                cups.RegistroNo, cups.Servicio, soat.DescripcionCUPS, 
+                FROM citas AS cita
+                JOIN pxcita ON cita.IdCita = pxcita.IdCita
+                LEFT JOIN cupsxservicio AS cups ON pxcita.CUPS = cups.CUPS
+                LEFT JOIN codigossoat AS soat ON pxcita.CUPS = soat.CodigoCUPS
+                WHERE cita.FeCita BETWEEN %s AND %s AND cita.Cancelada = 0
+            '''
+
+            cursor.execute(query, [fecha_inicio, fecha_fin])
+            rows = cursor.fetchall()
+
+            citas_data = []
+
+            for row in rows:
+                cita = {
+                    'IdCita': row[0],
+                    'VrUnitario': row[1],
+                    'Cantidad': row[2],
+                    'Agenda': row[3],
+                    'CUPS': row[4],
+                    'RegistroNo': row[5],
+                    'Servicio': row[6],
+                    'DescripcionCUPS': row[7],
+                    'ValorTotal': row[1] * row[2]
+                }
+                citas_data.append(cita)
+        
+        # Procesamiento adicional para filtrar los CUPS duplicados por cada cita
+        citas_data_filtered = []
+        processed_ids = set()  # Para realizar seguimiento de los IdCita procesados
+
+        for cita in citas_data:
+            id_cita = cita['IdCita']
+            cups = cita['CUPS']
+            if id_cita not in processed_ids:
+                citas_data_filtered.append(cita)
+                processed_ids.add(id_cita)
+            else:
+                # Verificar si el CUPS ya ha sido registrado para esta cita
+                cups_set = set(cita['CUPS'] for cita in citas_data_filtered if cita['IdCita'] == id_cita)
+                if cups not in cups_set:
+                    citas_data_filtered.append(cita)
+
+        return citas_data_filtered
+    
+    def calculate_consolidated_data(self, citas_por_rango):
+        consolidated_data = defaultdict(int)
+        servicio_categoria = {
+            "1": "ImagenesBajaComplejidad",
+            "2": "ImagenesBajaComplejidad",
+            "3": "ImagenesBajaComplejidad",
+            "4": "EstudioSueño",
+            "6": "EstudioSueño",
+            "7": "EstudioSueño",
+            "8": "EstudioSueño",
+            "10": "EstudioSueño",
+            "14": "Neurologia",
+            "16": "Neurologia",
+            "20": "Neurologia",
+            "21": "AltaComplejidad",
+            "22": "AltaComplejidad",
+            "23": "AltaComplejidad",
+            "24": "AltaComplejidad",
+            "5": "Fisiatria",
+            "9": "Fisiatria",
+            "11": "Fisiatria",
+            "17": "Fisiatria",
+            "18": "Fisiatria",
+            "19": "Fisiatria"
+        }
+
+        for fecha, citas in citas_por_rango.items():
+            for cita in citas:
+                categoria = servicio_categoria.get(cita['Servicio'], 'Otros')
+                consolidated_data[categoria] += cita['ValorTotal']
+
+        return consolidated_data
+    
+
+
+
+class CodigoSoatList(APIView):
+    def get(self, request, tarifa_number, format=None):
+        with connections['datosipsndx'].cursor() as cursor:
+            tarifa_field = f'Tarifa{tarifa_number:02d}'
+            query = f'''
+                SELECT CodigoCUPS, DescripcionCUPS, {tarifa_field} 
+                FROM codigossoat 
+                WHERE {tarifa_field} <> 0
+            '''
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            data = [{'CodigoCUPS': row[0],  'DescripcionCUPS': row[1],'Tarifa': row[2]} for row in rows]
+
+        return Response(data)
+    
+
+
+
+
+class ContratoTarifaListView(APIView):
+    def get(self, request, format=None):
+        codigos = [
+            { "id": 1, "label": "POLICIA ELECTRODIAGNOSTIC" },
+            { "id": 2, "label": "EQUIVIDA" },
+            { "id": 3, "label": "1 ENTIDAD PROMOTORA DE SALUD SANITAS S.A.S – EN INTERVENCIÓN BAJO LA MEDIDA DE TOMA DE POSESIÓN" },
+            { "id": 4, "label": "POL 04 FISIATRIA 2022" },
+            { "id": 5, "label": "INV META CAPITAL SALUD" },
+            { "id": 6, "label": "POL09_FISATRIA" },
+            { "id": 7, "label": "POL10_ELECTRO" },
+            { "id": 8, "label": "POL 03" },
+            { "id": 9, "label": "SALUD TOTAL" },
+            { "id": 10, "label": "INV META PARTICULAR" },
+            { "id": 11, "label": "UNAAC" },
+            { "id": 12, "label": "DMORI2023" },
+            { "id": 13, "label": "INV META COMPARTA" },
+            { "id": 14, "label": "NV META SEGUROS DEL ESTA" },
+            { "id": 15, "label": "INV META CAJACOPI" },
+            { "id": 16, "label": "DISPENSARIO MEDICO" },
+            { "id": 17, "label": "POLICIA FISIATRIA 2" },
+            { "id": 18, "label": "INV META SEGUROS BOLIVAR" },
+            { "id": 19, "label": "INV META COLSANITAS" },
+            { "id": 20, "label": "CENTRO DE CUIDADO CLINICO" },
+            { "id": 21, "label": "COLMEDICA" },
+            { "id": 22, "label": "NUEVA CLINICA BARZAL" },
+            { "id": 23, "label": "CONSULTORIO IPS" },
+            { "id": 24, "label": "INV META COMPENSAR" },
+            { "id": 25, "label": "INV META COLMEDICA" },
+            { "id": 26, "label": "MEDISANITAS" },
+            { "id": 27, "label": "FISIATRIA POL05" },
+            { "id": 28, "label": "CLINICA META" },
+            { "id": 29, "label": "CHM MEDIMAS IMG DX" },
+            { "id": 30, "label": "POL11" },
+            { "id": 31, "label": "MEDIMAS" },
+            { "id": 32, "label": "CAJACOPI" },
+            { "id": 33, "label": "INVENTARIO" },
+            { "id": 34, "label": "COMPENSAR" },
+            { "id": 35, "label": "ENTIDAD PROMOTORA DE SALUD SANITAS S.A.S – EN INTERVENCIÓN BAJO LA MEDIDA DE TOMA DE POSESIÓN" },
+            { "id": 36, "label": "PARTICULAR" },
+            { "id": 37, "label": "PIJAOS" },
+            { "id": 38, "label": "CAPITAL SALUD" },
+            { "id": 39, "label": "NUEVA CLINICA SOAT" },
+            { "id": 40, "label": "COLSANITAS" }
+        ]
+        return Response(codigos)

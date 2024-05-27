@@ -78,12 +78,52 @@ class Servicios(models.Model):
 
 
 class CodigoSoat(models.Model):
-    CodigoCUPS = models.CharField(max_length=255)
-    CodigoISS= models.CharField(max_length=255)
-    DescripcionCUPS= models.CharField(max_length=255) 
-    Descripcion= models.CharField(max_length=255) 
-          
-    class Meta:
+        CodigoCUPS = models.CharField(max_length=255)
+        CodigoISS= models.CharField(max_length=255)
+        DescripcionCUPS= models.CharField(max_length=255) 
+        Descripcion= models.CharField(max_length=255) 
+        Tarifa01=models.FloatField() 
+        Tarifa02=models.FloatField() 
+        Tarifa03=models.FloatField() 
+        Tarifa04=models.FloatField() 
+        Tarifa05=models.FloatField() 
+        Tarifa06=models.FloatField() 
+        Tarifa07=models.FloatField() 
+        Tarifa08=models.FloatField() 
+        Tarifa09=models.FloatField() 
+        Tarifa10=models.FloatField() 
+        Tarifa11=models.FloatField() 
+        Tarifa12=models.FloatField() 
+        Tarifa13=models.FloatField() 
+        Tarifa14=models.FloatField() 
+        Tarifa15=models.FloatField() 
+        Tarifa16=models.FloatField() 
+        Tarifa17=models.FloatField() 
+        Tarifa18=models.FloatField() 
+        Tarifa19=models.FloatField() 
+        Tarifa20=models.FloatField() 
+        Tarifa21=models.FloatField() 
+        Tarifa22=models.FloatField() 
+        Tarifa23=models.FloatField() 
+        Tarifa24=models.FloatField() 
+        Tarifa25=models.FloatField() 
+        Tarifa26=models.FloatField() 
+        Tarifa27=models.FloatField()
+        Tarifa28=models.FloatField() 
+        Tarifa29=models.FloatField() 
+        Tarifa30=models.FloatField() 
+        Tarifa31=models.FloatField() 
+        Tarifa32=models.FloatField() 
+        Tarifa33=models.FloatField() 
+        Tarifa34=models.FloatField() 
+        Tarifa35=models.FloatField()
+        Tarifa36=models.FloatField() 
+        Tarifa37=models.FloatField() 
+        Tarifa38=models.FloatField() 
+        Tarifa39=models.FloatField() 
+        Tarifa40=models.FloatField() 
+        Tarifa41=models.FloatField()
         
-        db_table = 'codigossoat'
-        managed = False
+        class Meta:
+            db_table = 'codigossoat'
+            managed = False

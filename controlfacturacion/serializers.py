@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from controlfacturacion.models import DetalleFactura
+from controlfacturacion.models import CodigoSoat, DetalleFactura
 
 class DateSerializerField(serializers.Field):
     def to_representation(self, value):
@@ -11,4 +11,10 @@ class DetalleFacturaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DetalleFactura
+        fields = '__all__'
+
+
+class CodigoSoatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CodigoSoat
         fields = '__all__'

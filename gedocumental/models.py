@@ -76,6 +76,8 @@ class ObservacionesArchivos(models.Model):
     IdObservacion = models.AutoField(primary_key=True)
     FechaObservacion = models.DateTimeField(auto_now_add=True)
     Descripcion = models.CharField(max_length=255, default="")
+    ObservacionCuentasMedicas = models.BooleanField(default=False)
+    ObservacionTesoreria = models.BooleanField(default=False)
 
     class Meta:
         db_table = 'ObservacionArchivo'
@@ -83,9 +85,14 @@ class ObservacionesArchivos(models.Model):
 
 @receiver(post_save, sender=ArchivoFacturacion)
 def create_observacion_archivo(sender, instance, created, **kwargs):
-    print("Señal post_save recibida para ArchivoFacturacion")
     if created and instance.Observacion:
-        observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=instance, Descripcion=instance.Observacion)
-        print("Instancia de ObservacionesArchivos creada:", observacion_obj)
+        # Determinar si la observación está relacionada con cuentas médicas o tesorería
+        observacion_cuentas_medicas = instance.ObservacionCuentasMedicas
+        observacion_tesoreria = instance.ObservacionTesoreria
 
-
+        ObservacionesArchivos.objects.create(
+            IdArchivo=instance,
+            Descripcion=instance.Observacion,
+            ObservacionCuentasMedicas=observacion_cuentas_medicas,
+            ObservacionTesoreria=observacion_tesoreria
+        )

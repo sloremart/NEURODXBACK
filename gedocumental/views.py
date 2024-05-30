@@ -2,6 +2,7 @@ from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
+from django.db.models import Q
 from PyPDF2 import PdfMerger
 from rest_framework.request import Request as DRFRequest
 from urllib.parse import unquote
@@ -261,7 +262,6 @@ def downloadFile(request, id_archivo):
 
 ######## REVISION CUENTAS MEDICAS - TALENTO HUMANO #######
             
-
 class AdmisionCuentaMedicaView(APIView):
     def post(self, request, *args, **kwargs):
         print("Datos recibidos en la solicitud:", request.data)
@@ -284,26 +284,26 @@ class AdmisionCuentaMedicaView(APIView):
                             return Response({"success": False, "message": "Error de validación en los datos del archivo", "error_details": errors}, status=status.HTTP_400_BAD_REQUEST)
 
                         observacion = archivo_data.get('Observacion')
-                        if observacion is not None and observacion.strip():
-                            observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo_existente, Descripcion =observacion)
+                        if observacion:
+                            observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo_existente, Descripcion=observacion)
                             print("Observación creada:", observacion_obj)
+                            observacion_obj.ObservacionCuentasMedicas = True  # Se establece en True si es para cuentas médicas
+                            observacion_obj.save()
 
                     except ArchivoFacturacion.DoesNotExist:
                         return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
                 admision_ids = [archivo_data.get('Admision_id') for archivo_data in archivos]
                 
-
                 auditoria_cuentas_medicas = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
                 todos_revision_primera_true = all(archivo_data.get('RevisionPrimera', False) for archivo_data in archivos)
-
                 auditoria_cuentas_medicas.update(RevisionCuentasMedicas=todos_revision_primera_true)
 
                 return Response({"success": True, "message": "Datos guardados correctamente"}, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-#### ADMISION TESORERIA ####
+######TESORERIA 
 
 class AdmisionTesoreriaView(APIView):
     def post(self, request, *args, **kwargs):
@@ -321,14 +321,24 @@ class AdmisionTesoreriaView(APIView):
                     archivo = ArchivoFacturacion.objects.get(IdArchivo=archivo_id)
                     archivo.RevisionSegunda = revision_segunda
                     archivo.save()
+
+                    # Aquí agregamos la lógica para crear la observación
+                    observacion = archivo_data.get('Observacion')
+                    if observacion:
+                        observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo, Descripcion=observacion)
+                        print("Observación creada:", observacion_obj)
+                        observacion_obj.ObservacionTesoreria = True  # Se establece en True si es para tesorería
+                        observacion_obj.save()
+
                     print(f"Se actualizó el campo RevisionSegunda para el archivo {archivo_id}")
+
                 todos_revision_segunda_true = all(archivo_data.get('RevisionSegunda', False) for archivo_data in archivos)
                 print("Todos los archivos tienen RevisionSegunda en True:", todos_revision_segunda_true)
+
                 if todos_revision_segunda_true:
                     auditoria_cuentas_medicas = AuditoriaCuentasMedicas.objects.filter(AdmisionId=consecutivo_consulta)
                     print("Registros de AuditoriaCuentasMedicas antes de la actualización:", auditoria_cuentas_medicas)
 
-                    
                     auditoria_cuentas_medicas.update(RevisionTesoreria=True)
                     print("Registros de AuditoriaCuentasMedicas después de la actualización:", auditoria_cuentas_medicas)
 
@@ -336,10 +346,6 @@ class AdmisionTesoreriaView(APIView):
 
         except Exception as e:
             return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
 
         
 ####### FILTRO DE ADMISIONES Y ARCHIVOS POR FECHA ####
@@ -422,17 +428,16 @@ class CodigoListView(APIView):
         return Response(codigos)
     
 
-
-
-
-
+### FILTRO QUE TRAE LAS ADM QUE TIENEN OBSER CM Y TESOERIA ######
 
 def admisiones_con_observaciones_por_usuario(request, usuario_id):
     try:
-        # Filtrar registros de AuditoriaCuentasMedicas según RevisionCuentasMedicas
+        # Filtrar registros de AuditoriaCuentasMedicas según RevisionCuentasMedicas y ObservacionCuentasMedicas
         admisiones_con_observaciones = AuditoriaCuentasMedicas.objects.filter(
-            AdmisionId__in=ArchivoFacturacion.objects.filter(Usuario_id=usuario_id, Observaciones__isnull=False).values_list('Admision_id', flat=True),
-            RevisionCuentasMedicas=False  # Filtrar solo los registros con RevisionCuentasMedicas en False
+            Q(AdmisionId__in=ObservacionesArchivos.objects.filter(IdArchivo__Usuario_id=usuario_id, ObservacionCuentasMedicas=True).values_list('IdArchivo__Admision_id', flat=True)) |
+            Q(AdmisionId__in=ObservacionesArchivos.objects.filter(IdArchivo__Usuario_id=usuario_id, ObservacionTesoreria=True).values_list('IdArchivo__Admision_id', flat=True)),
+            RevisionCuentasMedicas=False,
+            RevisionTesoreria=False
         )
 
         admisiones_data = []
@@ -473,7 +478,7 @@ def admisiones_con_observaciones_por_usuario(request, usuario_id):
             "data": None
         }
 
-        return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+        
 
 
 
@@ -552,7 +557,7 @@ def radicar_compensar_view(request, numero_admision):
                         print("Ruta de origen:", ruta_origen) 
                        
                         if os.path.exists(ruta_origen):
-                            carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'COMPENSAR', carpeta_tipo_archivo)  
+                            carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COMPENSAR', carpeta_tipo_archivo)  
                             ruta_destino = os.path.join(carpeta_path, nombre_archivo) 
                             shutil.copy(ruta_origen, ruta_destino)  
                             print("Archivo copiado exitosamente.")  
@@ -644,7 +649,7 @@ def radicar_salud_total_view(request, numero_admision):
                     else:
                         carpeta_tipo_archivo = 'SUBSIDIADO'
 
-                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SALUDTOTAL', carpeta_tipo_archivo)
+                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SALUDTOTAL', carpeta_tipo_archivo)
                     if not os.path.exists(carpeta_path):
                         os.makedirs(carpeta_path)
 
@@ -740,7 +745,7 @@ def radicar_sanitas_evento_view(request, numero_admision):
                                 carpeta_tipo_archivo = 'SUBSIDIADO'
                         
                         carpeta_prefijo_numero_factura = f"{prefijo}{factura_numero}"
-                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'SANITASEVENTO', carpeta_tipo_archivo, carpeta_prefijo_numero_factura)
+                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SANITASEVENTO', carpeta_tipo_archivo, carpeta_prefijo_numero_factura)
                         if not os.path.exists(carpeta_nombre_archivo):
                             os.makedirs(carpeta_nombre_archivo)
 
@@ -789,7 +794,7 @@ def radicar_colsanitas_view(request, numero_admision):
                 if archivos_response.status_code == 200:
                     archivos_data = archivos_response.data.get('data', [])
                     
-                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'COLSANITAS')
+                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COLSANITAS')
                     if not os.path.exists(carpeta_path):
                         os.makedirs(carpeta_path)
 
@@ -887,7 +892,7 @@ def radicar_capitalsalud_view(request, numero_admision):
                                 ruta_origen = os.path.join(settings.MEDIA_ROOT, ruta_origen_relative[len(settings.MEDIA_URL):])
                                 merger.append(ruta_origen)
                         
-                        ruta_destino_merged = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'CAPITALSALUD', f"{prefijo}{factura_numero}.pdf")
+                        ruta_destino_merged = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'CAPITALSALUD', f"{prefijo}{factura_numero}.pdf")
                         merger.write(ruta_destino_merged)
                         merger.close()
 
@@ -955,7 +960,7 @@ def radicar_other_view(request, numero_admision):
                                 carpeta_tipo_archivo = 'SUBSIDIADO'
 
                         # Crear la carpeta según el prefijo si no existe
-                        carpeta_prefijo = os.path.join(settings.MEDIA_ROOT, 'GeDocumental', 'Radicacion', 'CAJACOPI', carpeta_tipo_archivo, prefijo)
+                        carpeta_prefijo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'CAJACOPI', carpeta_tipo_archivo, prefijo)
                         if not os.path.exists(carpeta_prefijo):
                             os.makedirs(carpeta_prefijo)
 

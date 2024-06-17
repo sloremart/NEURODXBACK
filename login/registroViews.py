@@ -55,3 +55,8 @@ class LoginView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Nombre de usuario o contraseña incorrectos.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+
+class CustomUserListView(generics.ListAPIView):
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer

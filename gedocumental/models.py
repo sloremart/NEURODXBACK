@@ -13,7 +13,7 @@ class ArchivoFacturacion(models.Model):
     Tipo = models.CharField(max_length=50, choices=[])
     Usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
-    RutaArchivo = models.FileField(upload_to='GeDocumental/archivosFacturacion', max_length=255, blank=True, null=True)
+    RutaArchivo = models.FileField(upload_to='gdocumental/archivosFacturacion', max_length=255, blank=True, null=True)
     NumeroAdmision = models.IntegerField() 
     Observacion = models.TextField(blank=True, null=True)
     FechaCreacionArchivo = models.DateTimeField(auto_now_add=True)
@@ -54,22 +54,22 @@ class AuditoriaCuentasMedicas(models.Model):
     class Meta:
         db_table = 'AdmisionAuditoria'
         managed = True
-
+        
 @receiver(post_save, sender=ArchivoFacturacion)
 def update_revision_cuentas_medicas(sender, instance, **kwargs):
     archivos_admision = ArchivoFacturacion.objects.filter(Admision_id=instance.Admision_id)
 
-    # Verificar si todos los archivos tienen RevisionPrimera en True
-    if archivos_admision.exists() and not archivos_admision.filter(RevisionPrimera=False).exists():
-        nuevo_modelo, _ = AuditoriaCuentasMedicas.objects.get_or_create(AdmisionId=instance.Admision_id)
-        nuevo_modelo.RevisionCuentasMedicas = True
-        nuevo_modelo.save()
-    else:
-        nuevo_modelo, _ = AuditoriaCuentasMedicas.objects.get_or_create(AdmisionId=instance.Admision_id)
-        nuevo_modelo.RevisionCuentasMedicas = False
-        nuevo_modelo.save()
+    # Verificar RevisionPrimera
+    revision_primera_complete = archivos_admision.exists() and not archivos_admision.filter(RevisionPrimera=False).exists()
+    
+    # Verificar RevisionSegunda
+    revision_segunda_complete = archivos_admision.exists() and not archivos_admision.filter(RevisionSegunda=False).exists()
+    
+    nuevo_modelo, _ = AuditoriaCuentasMedicas.objects.get_or_create(AdmisionId=instance.Admision_id)
+    nuevo_modelo.RevisionCuentasMedicas = revision_primera_complete
+    nuevo_modelo.RevisionTesoreria = revision_segunda_complete
 
-
+    nuevo_modelo.save()
 
 class ObservacionesArchivos(models.Model):
     IdArchivo = models.ForeignKey(ArchivoFacturacion, on_delete=models.CASCADE, related_name='Observaciones')
@@ -87,8 +87,10 @@ class ObservacionesArchivos(models.Model):
 def create_observacion_archivo(sender, instance, created, **kwargs):
     if created and instance.Observacion:
         # Determinar si la observación está relacionada con cuentas médicas o tesorería
+        observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=instance, Descripcion=instance.Observacion)
         observacion_cuentas_medicas = instance.ObservacionCuentasMedicas
         observacion_tesoreria = instance.ObservacionTesoreria
+        print("Instancia de ObservacionesArchivos creada:", observacion_obj)
 
         ObservacionesArchivos.objects.create(
             IdArchivo=instance,

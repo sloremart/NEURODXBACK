@@ -2,9 +2,8 @@ from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
-from django.db.models import Q
+from django.db.models import Q, Max
 from PyPDF2 import PdfMerger
-from rest_framework.request import Request as DRFRequest
 from urllib.parse import unquote
 from django.db import IntegrityError, transaction
 from django.db.models.functions import TruncDate
@@ -17,14 +16,14 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from gedocumental.modelsFacturacion import Admisiones
 from gedocumental.utils.codigoentidad import obtener_tipos_documentos_por_entidad
-from neurodx.settings import MEDIA_ROOT
 from .serializers import   ArchivoFacturacionSerializer,  RevisionCuentaMedicaSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
-from django.contrib.auth.models import User
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
 import os
+from django.db.models import Count
+from django.views.decorators.http import require_GET
+from datetime import datetime, timedelta
 
 
 
@@ -97,7 +96,7 @@ class ArchivoUploadView(APIView):
             admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
             # Crear el directorio para guardar los archivos
-            folder_path = os.path.join(settings.MEDIA_ROOT, 'Gedocumental', 'archivosFacturacion', str(admision.Consecutivo))
+            folder_path = os.path.join(settings.MEDIA_ROOT, 'gedocumental', 'archivosFacturacion', str(admision.Consecutivo))
             os.makedirs(folder_path, exist_ok=True)
 
             archivos = request.FILES.getlist('files')
@@ -157,8 +156,21 @@ class ArchivoEditView(APIView):
             archivo = ArchivoFacturacion.objects.get(IdArchivo=archivo_id, Admision_id=admision.Consecutivo)
             if 'archivo' in request.FILES:
                 archivo_nuevo = request.FILES['archivo']
+
+                # Obtener la ruta de la carpeta actual del archivo
+                carpeta_actual = os.path.dirname(archivo.RutaArchivo.path)
+                
+                # Eliminar el archivo antiguo
+                archivo.RutaArchivo.delete(save=False)
+
+                # Guardar el archivo nuevo en la misma carpeta
+                archivo_nombre_nuevo = os.path.join(carpeta_actual, archivo_nuevo.name)
+                with open(archivo_nombre_nuevo, 'wb') as file:
+                    for chunk in archivo_nuevo.chunks():
+                        file.write(chunk)
+
                 archivo.NombreArchivo = archivo_nuevo.name 
-                archivo.RutaArchivo = archivo_nuevo  
+                archivo.RutaArchivo = archivo_nombre_nuevo  
                 archivo.save(update_fields=['NombreArchivo', 'RutaArchivo'])  
 
                 auditoria = AuditoriaCuentasMedicas.objects.get(AdmisionId=archivo.Admision_id)
@@ -285,10 +297,12 @@ class AdmisionCuentaMedicaView(APIView):
 
                         observacion = archivo_data.get('Observacion')
                         if observacion:
-                            observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo_existente, Descripcion=observacion)
+                            observacion_obj = ObservacionesArchivos.objects.create(
+                                IdArchivo=archivo_existente,
+                                Descripcion=observacion,
+                                ObservacionCuentasMedicas=True  
+                            )
                             print("Observación creada:", observacion_obj)
-                            observacion_obj.ObservacionCuentasMedicas = True  # Se establece en True si es para cuentas médicas
-                            observacion_obj.save()
 
                     except ArchivoFacturacion.DoesNotExist:
                         return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
@@ -303,6 +317,7 @@ class AdmisionCuentaMedicaView(APIView):
 
         except Exception as e:
             return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 ######TESORERIA 
 
 class AdmisionTesoreriaView(APIView):
@@ -351,23 +366,28 @@ class AdmisionTesoreriaView(APIView):
 ####### FILTRO DE ADMISIONES Y ARCHIVOS POR FECHA ####
 
 
-from datetime import datetime, timedelta
 class FiltroAuditoriaCuentasMedicas(APIView):
     def get(self, request):
+        user_id = request.query_params.get('user_id', None)
         fecha_creacion_str = request.query_params.get('FechaCreacion', None)
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
         codigo_entidad = request.query_params.get('CodigoEntidad', None)
-        
+
+        if not user_id:
+            return Response({"error": "user_id is required"}, status=400)
+
         if fecha_creacion_str:
             fecha_creacion = datetime.strptime(fecha_creacion_str, '%Y-%m-%d')
             fecha_inicio = fecha_creacion.replace(hour=0, minute=0, second=0)
             fecha_fin = fecha_inicio + timedelta(days=1) - timedelta(seconds=1)
-            archivos_facturacion = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__date=fecha_creacion)
+            archivos_facturacion = ArchivoFacturacion.objects.filter(FechaCreacionArchivo__date=fecha_creacion, Usuario_id=user_id)
             admision_ids = archivos_facturacion.values_list('Admision_id', flat=True)
             queryset = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
         else:
-            queryset = AuditoriaCuentasMedicas.objects.all()
-        
+            archivos_facturacion = ArchivoFacturacion.objects.filter(Usuario_id=user_id)
+            admision_ids = archivos_facturacion.values_list('Admision_id', flat=True)
+            queryset = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
+
         response_data = []
 
         with connections['datosipsndx'].cursor() as cursor:
@@ -428,21 +448,29 @@ class CodigoListView(APIView):
         return Response(codigos)
     
 
-### FILTRO QUE TRAE LAS ADM QUE TIENEN OBSER CM Y TESOERIA ######
-
+### FILTRO QUE TRAE LAS ADM QUE TIENEN OBSER CM  ######
 def admisiones_con_observaciones_por_usuario(request, usuario_id):
     try:
-        # Filtrar registros de AuditoriaCuentasMedicas según RevisionCuentasMedicas y ObservacionCuentasMedicas
+        # Filtrar registros de ObservacionesArchivos para el usuario dado
+        observaciones = ObservacionesArchivos.objects.filter(
+            IdArchivo__Usuario_id=usuario_id
+        ).filter(
+            Q(ObservacionCuentasMedicas=True) | Q(ObservacionTesoreria=True)
+        )
+
+        # Obtener los Ids de las admisiones con las observaciones
+        admisiones_ids = observaciones.values_list('IdArchivo__Admision_id', flat=True).distinct()
+
+        # Filtrar registros de AuditoriaCuentasMedicas con la condición especificada (solo RevisionTesoreria)
         admisiones_con_observaciones = AuditoriaCuentasMedicas.objects.filter(
-            Q(AdmisionId__in=ObservacionesArchivos.objects.filter(IdArchivo__Usuario_id=usuario_id, ObservacionCuentasMedicas=True).values_list('IdArchivo__Admision_id', flat=True)) |
-            Q(AdmisionId__in=ObservacionesArchivos.objects.filter(IdArchivo__Usuario_id=usuario_id, ObservacionTesoreria=True).values_list('IdArchivo__Admision_id', flat=True)),
-            RevisionCuentasMedicas=False,
-            RevisionTesoreria=False
+            AdmisionId__in=admisiones_ids,
+            RevisionTesoreria=False  # Solo filtramos por RevisionTesoreria
         )
 
         admisiones_data = []
         with connections['datosipsndx'].cursor() as cursor:
             for auditoria in admisiones_con_observaciones:
+                # Obtener datos de la admisión
                 query_admision = '''
                     SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
                     FROM admisiones
@@ -452,14 +480,27 @@ def admisiones_con_observaciones_por_usuario(request, usuario_id):
                 admision_data = cursor.fetchone()
 
                 if admision_data:
+                    # Consulta para obtener el prefijo de la factura asociada a la admisión
+                    query_factura = 'SELECT Prefijo FROM facturas WHERE AdmisionNo = %s'
+                    cursor.execute(query_factura, [auditoria.AdmisionId])
+                    factura_info = cursor.fetchone()
+
+                    prefijo = factura_info[0] if factura_info else ''
+                    numero_factura = admision_data[4] if len(admision_data) > 4 else ''
+                    factura_completa = f"{prefijo}{numero_factura}"
+
+                    # Obtener la fecha más reciente de observación para la admisión
+                    fecha_reciente_observacion = ObservacionesArchivos.objects.filter(
+                        IdArchivo__Admision_id=auditoria.AdmisionId
+                    ).aggregate(max_fecha=Max('FechaObservacion'))['max_fecha']
+
                     transformed_data = {
                         'Consecutivo': admision_data[0],
                         'IdPaciente': admision_data[1],
                         'CodigoEntidad': admision_data[2],
                         'NombreResponsable': admision_data[3],
-                        'FacturaNo': admision_data[4] if len(admision_data) > 4 else None,
-                        'Observacion': auditoria.Observacion
-                        # Agrega más campos según sea necesario
+                        'FacturaNo': factura_completa,
+                        'FechaRecienteObservacion': fecha_reciente_observacion
                     }
                     admisiones_data.append(transformed_data)
 
@@ -469,7 +510,7 @@ def admisiones_con_observaciones_por_usuario(request, usuario_id):
             "data": admisiones_data
         }
 
-        return JsonResponse(response_data, status=status.HTTP_200_OK)
+        return JsonResponse(response_data, status=200)
 
     except AuditoriaCuentasMedicas.DoesNotExist:
         response_data = {
@@ -478,10 +519,93 @@ def admisiones_con_observaciones_por_usuario(request, usuario_id):
             "data": None
         }
 
-        
+        return JsonResponse(response_data, status=404)
 
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": "Error interno del servidor",
+            "error_details": str(e)
+        }
 
+        return JsonResponse(response_data, status=500)
 
+#####FILTRO QUE TRAE LAS ADM QUE TIENEN OBSER CM Y TESOERIA###################
+def admisiones_con_revision_tesoreria(request, usuario_id):
+    try:
+        # Filtrar registros de ObservacionesArchivos para el usuario dado
+        observaciones = ObservacionesArchivos.objects.filter(
+            IdArchivo__Usuario_id=usuario_id
+        ).filter(
+            Q(ObservacionCuentasMedicas=True) | Q(ObservacionTesoreria=True)
+        )
+
+        # Obtener los Ids de las admisiones con las observaciones
+        admisiones_ids = observaciones.values_list('IdArchivo__Admision_id', flat=True).distinct()
+
+        # Filtrar registros de AuditoriaCuentasMedicas con la condición especificada (solo RevisionTesoreria)
+        admisiones_con_observaciones = AuditoriaCuentasMedicas.objects.filter(
+            AdmisionId__in=admisiones_ids,
+            RevisionTesoreria=False  # Solo filtramos por RevisionTesoreria
+        )
+
+        admisiones_data = []
+        with connections['datosipsndx'].cursor() as cursor:
+            for auditoria in admisiones_con_observaciones:
+                # Obtener datos de la admisión
+                query_admision = '''
+                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
+                    FROM admisiones
+                    WHERE Consecutivo = %s
+                '''
+                cursor.execute(query_admision, [auditoria.AdmisionId])
+                admision_data = cursor.fetchone()
+
+                if admision_data:
+                    # Consulta para obtener el prefijo de la factura asociada a la admisión
+                    query_factura = 'SELECT Prefijo FROM facturas WHERE AdmisionNo = %s'
+                    cursor.execute(query_factura, [auditoria.AdmisionId])
+                    factura_info = cursor.fetchone()
+
+                    prefijo = factura_info[0] if factura_info else ''
+                    numero_factura = admision_data[4] if len(admision_data) > 4 else ''
+                    factura_completa = f"{prefijo}{numero_factura}"
+
+                    transformed_data = {
+                        'Consecutivo': admision_data[0],
+                        'IdPaciente': admision_data[1],
+                        'CodigoEntidad': admision_data[2],
+                        'NombreResponsable': admision_data[3],
+                        'FacturaNo': factura_completa,
+                        # 'Observacion': auditoria.Observacion  # Esto no parece estar en tu modelo, asegúrate de que existe
+                    }
+                    admisiones_data.append(transformed_data)
+
+        response_data = {
+            "success": True,
+            "detail": f"Admisiones con revisión de tesorería pendiente encontradas para el usuario con ID {usuario_id}",
+            "data": admisiones_data
+        }
+
+        return JsonResponse(response_data, status=status.HTTP_200_OK)
+
+    except AuditoriaCuentasMedicas.DoesNotExist:
+        response_data = {
+            "success": False,
+            "detail": f"No se encontraron admisiones con revisión de tesorería pendiente para el usuario con ID {usuario_id}",
+            "data": None
+        }
+
+        return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": "Error interno del servidor",
+            "error_details": str(e)
+        }
+
+        return JsonResponse(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 ###### FILTRO TESORERIA #####
 
@@ -993,3 +1117,109 @@ def radicar_other_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
+    
+
+########## FILTRO DE PUNTEO ADMISIONES ####
+
+class AdmisionesPorFechaYFacturado(APIView):
+    def get(self, request, format=None):
+        fecha = request.GET.get('Fecha')
+        creado_por = request.GET.get('CreadoPor')
+
+        if fecha and creado_por:
+            try:
+                with connections['datosipsndx'].cursor() as cursor:
+                    query_count = '''
+                    SELECT COUNT(*) as cantidad
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
+                    '''
+
+                    cursor.execute(query_count, [fecha, creado_por])
+                    admisiones_count = cursor.fetchone()[0]
+                    query_details = '''
+                    SELECT *
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
+                    '''
+
+                    cursor.execute(query_details, [fecha, creado_por])
+                    admisiones_data = cursor.fetchall()
+
+                    admisiones_list = []
+                    for admision_data in admisiones_data:
+                        admision_dict = {
+                            'Consecutivo': admision_data[0],
+                        }
+                        admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": admisiones_count,
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: fecha y/o facturado_por.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)
+########## PUNTEO APP###########class AdmisionesPorFechaYUsuario(APIView):
+
+class AdmisionesPorFechaYUsuario(APIView):
+    def get(self, request, format=None):
+        fecha_creacion_archivo = request.GET.get('FechaCreacionArchivo')
+        usuario_id = request.GET.get('UsuarioId')
+
+        if fecha_creacion_archivo and usuario_id:
+            try:
+                # Filtrar las admisiones por fecha de creación y usuario, y agrupar por Admision_id
+                admisiones_queryset = (ArchivoFacturacion.objects
+                                       .filter(FechaCreacionArchivo__date=fecha_creacion_archivo, Usuario_id=usuario_id)
+                                       .values('Admision_id')
+                                       .annotate(cantidad=Count('Admision_id')))
+
+                admisiones_count = admisiones_queryset.count()
+
+                admisiones_list = []
+                for admision in admisiones_queryset:
+                    admision_dict = {
+                        'Consecutivo': admision['Admision_id'],
+                    }
+                    admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": admisiones_count,
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: FechaCreacionArchivo y/o UsuarioId.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)

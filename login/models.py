@@ -6,7 +6,9 @@ class CustomUser(AbstractUser):
     nombre = models.CharField(max_length=255)
     email = models.EmailField(unique=True)
     cargo = models.CharField(max_length=255)
-    username = models.CharField(max_length=150, unique=True)
+    username = models.CharField(max_length=150, unique=True)    
+    id_usuario_antares= models.IntegerField(blank=True, null=True)
+    usuario_antares= models.IntegerField(blank=True, null=True)
 
     groups = models.ManyToManyField(
         'auth.Group',

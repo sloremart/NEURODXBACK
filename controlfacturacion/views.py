@@ -613,34 +613,31 @@ class CitasPxApiView(APIView):
                 }
                 citas_data.append(cita)
 
-        # Debugging: Log the initial count of citas
         print(f"Total citas fetched: {len(citas_data)}")
 
-        # Filtrar citas duplicadas por IdCita y CUPS
         citas_data, duplicate_citas = self.filter_duplicate_citas(citas_data)
 
-        # Debugging: Log the count after filtering duplicates
+     
         print(f"Total citas after filtering duplicates: {len(citas_data)}")
         print(f"Duplicated citas: {duplicate_citas}")
 
-        # Aplicar ajuste de precios a las citas
+      
         citas_ajustadas = self.adjust_prices(citas_data)
 
-        # Organizar las citas por día
+       
         citas_por_dia = OrderedDict()
         for cita in citas_ajustadas:
-            fecha_cita = cita['FeCita'].strftime('%Y-%m-%d')  # Convertir fecha a cadena
+            fecha_cita = cita['FeCita'].strftime('%Y-%m-%d') 
             if fecha_cita not in citas_por_dia:
                 citas_por_dia[fecha_cita] = []
             citas_por_dia[fecha_cita].append(cita)
 
-        # Ordenar el diccionario por las claves (fechas)
+      
         citas_por_dia = OrderedDict(sorted(citas_por_dia.items()))
 
-        # Calcular el total de todas las citas
+        
         total_citas = sum(cita['Cantidad'] for cita in citas_ajustadas)
 
-        # Debugging: Log the final total count of citas
         print(f"Total citas adjusted and counted: {total_citas}")
 
         return citas_por_dia, total_citas

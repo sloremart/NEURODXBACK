@@ -3,10 +3,11 @@ from django.conf import settings
 from django.contrib import admin
 from django.urls import path
 from django.conf.urls.static import static
-from login.registroViews import LoginView, RegisterView
+from login.registroViews import CustomUserListView, LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, TablaRadicacion, admisiones_con_observaciones_por_usuario, archivos_por_admision, radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
+from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView, AdmisionesPorFechaYFacturado, AdmisionesPorFechaYUsuario,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, TablaRadicacion, admisiones_con_observaciones_por_usuario, admisiones_con_revision_tesoreria, archivos_por_admision,  radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
 from controlfacturacion.views import AgendasView, CiPxApiView, CitasPxApiView, CodigoSoatList, ContratoTarifaListView, FiltroDetalleFacturaPorFecha, FiltroFacturaPorFecha, CitasSubcentroApiView
+
 
 
 urlpatterns = [
@@ -24,6 +25,7 @@ urlpatterns = [
     path('admisiones/<str:consecutivo>/editar/<int:archivo_id>/', ArchivoEditView.as_view(), name='borrar_archivo'),## editar DE ARCHIVOS 
     path('lista_codigo_entidad/', CodigoListView.as_view()),
     path('archivos_por_usuario_observacion/<int:usuario_id>/', admisiones_con_observaciones_por_usuario,),
+    path('archivos_por_usuario_observacion_tesoreria/<int:usuario_id>/', admisiones_con_revision_tesoreria,),
     path('filtro_tesoreria/', FiltroTesoreria.as_view(), name='filtro_tesoreria'),
     path('radicar_compensar/<int:numero_admision>/', radicar_compensar_view, name='radicar_compensar'),
     path('radicar_salud_total/<int:numero_admision>/', radicar_salud_total_view, ),   
@@ -38,8 +40,11 @@ urlpatterns = [
     path('consolidado_especialidad/', CiPxApiView.as_view()),  
     path('consolidado_subcentro/', CitasSubcentroApiView.as_view()),
     path('agenda/', AgendasView.as_view()),
-     path('lista_contrato_tarifa/', ContratoTarifaListView.as_view()),
+    path('lista_contrato_tarifa/', ContratoTarifaListView.as_view()),
     path('tarifas_contratos/<int:tarifa_number>/', CodigoSoatList.as_view(), name='codigo_soat_list'),
+    path('usuarios/', CustomUserListView.as_view(), name='customuser-list'),
+    path('punteo/', AdmisionesPorFechaYFacturado.as_view(), name='admisiones_por_fecha_y_facturado'),
+    path('punteo_neurodx/', AdmisionesPorFechaYUsuario.as_view(), name='admisiones_neurodx'),
 ]
 
 

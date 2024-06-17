@@ -96,7 +96,11 @@ class ArchivoUploadView(APIView):
             admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
 
             # Crear el directorio para guardar los archivos
-            folder_path = os.path.join(settings.MEDIA_ROOT, 'gedocumental', 'archivosFacturacion', str(admision.Consecutivo))
+
+          
+
+            folder_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'archivosFacturacion', str(admision.Consecutivo))
+
             os.makedirs(folder_path, exist_ok=True)
 
             archivos = request.FILES.getlist('files')

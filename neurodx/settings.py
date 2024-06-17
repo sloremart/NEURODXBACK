@@ -43,19 +43,19 @@ INSTALLED_APPS = [
     'gedocumental',
     'login',
     'citas',
-    'controlfacturacion',
-    
+     'controlfacturacion',
+
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',  
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    'corsheaders.middleware.CorsMiddleware', 
 ]
 
 
@@ -177,6 +177,7 @@ CORS_ALLOW_METHODS = [
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
+   "http://192.168.1.178:3000"
 ]
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False
@@ -194,6 +195,7 @@ CORS_ALLOW_HEADERS = [
 ]
 
 JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)
+
 
 
 

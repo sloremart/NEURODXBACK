@@ -94,9 +94,12 @@ class ArchivoUploadView(APIView):
 
             # Obtener la admisión
             admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
+            
+            # Obtener la fecha de creación desde la base de datos
+            fecha_creacion_antares = admision.FechaCreado
 
             # Crear el directorio para guardar los archivos
-            folder_path = os.path.join(settings.MEDIA_ROOT, 'gedocumental', 'archivosFacturacion', str(admision.Consecutivo))
+            folder_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'archivosFacturacion', str(admision.Consecutivo))
             os.makedirs(folder_path, exist_ok=True)
 
             archivos = request.FILES.getlist('files')
@@ -120,6 +123,7 @@ class ArchivoUploadView(APIView):
                     Tipo=request.data.get('tipoDocumentos', None),
                     RutaArchivo=ruta_relativa,
                     FechaCreacionArchivo=fecha_formateada,
+                    FechaCreacionAntares=fecha_creacion_antares,  # Asignar la fecha de creación de Antares
                     Usuario_id=user_id  
                 )
                 archivo_obj.NumeroAdmision = admision.Consecutivo
@@ -144,6 +148,7 @@ class ArchivoUploadView(APIView):
                 "data": None
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
+
 
 ##### EDICION DE ARCHIVOS ##########
 
@@ -369,7 +374,7 @@ class AdmisionTesoreriaView(APIView):
 class FiltroAuditoriaCuentasMedicas(APIView):
     def get(self, request):
         user_id = request.query_params.get('user_id', None)
-        fecha_creacion_str = request.query_params.get('FechaCreacion', None)
+        fecha_creacion_str = request.query_params.get('FechaCreacionAntares', None)
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
         codigo_entidad = request.query_params.get('CodigoEntidad', None)
 
@@ -443,7 +448,9 @@ class CodigoListView(APIView):
             'CHM02',
             'COL01',
             'MES01',
-            'SAL01'
+            'UNA02',
+            'MUL01',
+            'par01',
         ]
         return Response(codigos)
     
@@ -610,8 +617,8 @@ def admisiones_con_revision_tesoreria(request, usuario_id):
 ###### FILTRO TESORERIA #####
 
 class FiltroTesoreria(APIView):
-       def get(self, request):
-        fecha_creacion_str = request.query_params.get('FechaCreacion', None)
+    def get(self, request):
+        fecha_creacion_str = request.query_params.get('FechaCreacionAntares', None)
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
         codigo_entidad = request.query_params.get('CodigoEntidad', None)
 
@@ -620,7 +627,7 @@ class FiltroTesoreria(APIView):
         if codigo_entidad:
             admisiones_codigo = Admisiones.objects.filter(CodigoEntidad=codigo_entidad).values_list('Consecutivo', flat=True)
             queryset = queryset.filter(AdmisionId__in=admisiones_codigo)
-        
+
         response_data = []
 
         with connections['datosipsndx'].cursor() as cursor:
@@ -651,7 +658,6 @@ class FiltroTesoreria(APIView):
                         response_data.append(data)
 
         return Response(response_data)
-
 
 ###### RADICACION - CUENTAS MEDICAS #####
 def radicar_compensar_view(request, numero_admision):
@@ -1121,61 +1127,64 @@ def radicar_other_view(request, numero_admision):
 
 ########## FILTRO DE PUNTEO ADMISIONES ####
 
-class AdmisionesPorFechaYFacturado(APIView):
-    def get(self, request, format=None):
-        fecha = request.GET.get('Fecha')
-        creado_por = request.GET.get('CreadoPor')
+import logging
 
-        if fecha and creado_por:
-            try:
+logger = logging.getLogger(__name__)
+
+class FiltroTesoreria(APIView):
+    def get(self, request):
+        fecha_creacion_str = request.query_params.get('FechaCreacion', None)
+        revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
+        codigo_entidad = request.query_params.get('CodigoEntidad', None)
+
+        try:
+            queryset = AuditoriaCuentasMedicas.objects.all()
+
+            if codigo_entidad:
                 with connections['datosipsndx'].cursor() as cursor:
-                    query_count = '''
-                    SELECT COUNT(*) as cantidad
-                    FROM admisiones
-                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
-                    '''
+                    cursor.execute('''
+                        SELECT Consecutivo
+                        FROM admisiones
+                        WHERE CodigoEntidad = %s
+                    ''', [codigo_entidad])
+                    admisiones_codigo = [row[0] for row in cursor.fetchall()]
+                queryset = queryset.filter(AdmisionId__in=admisiones_codigo)
 
-                    cursor.execute(query_count, [fecha, creado_por])
-                    admisiones_count = cursor.fetchone()[0]
-                    query_details = '''
-                    SELECT *
-                    FROM admisiones
-                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
-                    '''
+            response_data = []
 
-                    cursor.execute(query_details, [fecha, creado_por])
-                    admisiones_data = cursor.fetchall()
+            with connections['datosipsndx'].cursor() as cursor:
+                for auditoria in queryset:
+                    cursor.execute('''
+                        SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, TipoAfiliado
+                        FROM admisiones
+                        WHERE Consecutivo = %s
+                    ''', [auditoria.AdmisionId])
+                    admision_data = cursor.fetchone()
 
-                    admisiones_list = []
-                    for admision_data in admisiones_data:
-                        admision_dict = {
-                            'Consecutivo': admision_data[0],
-                        }
-                        admisiones_list.append(admision_dict)
+                    if admision_data:
+                        if not revision_cuentas_medicas or bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas:
+                            data = {
+                                'AdmisionId': auditoria.AdmisionId,
+                                'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
+                                'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
+                                'Observacion': auditoria.Observacion,
+                                'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                                'RevisionTesoreria': auditoria.RevisionTesoreria,
+                                'Consecutivo': admision_data[0],
+                                'IdPaciente': admision_data[1],
+                                'CodigoEntidad': admision_data[2],
+                                'NombreResponsable': admision_data[3],
+                                'CedulaResponsable': admision_data[4],
+                                'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
+                            }
+                            response_data.append(data)
 
-                response_data = {
-                    "success": True,
-                    "detail": "Admisiones encontradas.",
-                    "cantidad": admisiones_count,
-                    "data": admisiones_list
-                }
-                return JsonResponse(response_data)
-            except Exception as e:
-                response_data = {
-                    "success": False,
-                    "detail": f"Error al buscar admisiones: {str(e)}",
-                    "cantidad": None,
-                    "data": None
-                }
-                return JsonResponse(response_data, status=500)
-        else:
-            response_data = {
-                "success": False,
-                "detail": "Faltan parámetros: fecha y/o facturado_por.",
-                "cantidad": None,
-                "data": None
-            }
-            return JsonResponse(response_data, status=400)
+            return Response(response_data)
+        except Exception as e:
+            logger.error(f'Error al obtener datos: {str(e)}')
+            return Response({'error': str(e)}, status=500)
+
+
 ########## PUNTEO APP###########class AdmisionesPorFechaYUsuario(APIView):
 
 class AdmisionesPorFechaYUsuario(APIView):
@@ -1185,11 +1194,12 @@ class AdmisionesPorFechaYUsuario(APIView):
 
         if fecha_creacion_archivo and usuario_id:
             try:
-                # Filtrar las admisiones por fecha de creación y usuario, y agrupar por Admision_id
+                # Filtrar las admisiones por fecha de creación y usuario, ordenar y agrupar por Admision_id
                 admisiones_queryset = (ArchivoFacturacion.objects
                                        .filter(FechaCreacionArchivo__date=fecha_creacion_archivo, Usuario_id=usuario_id)
                                        .values('Admision_id')
-                                       .annotate(cantidad=Count('Admision_id')))
+                                       .annotate(cantidad=Count('Admision_id'))
+                                       .order_by('Admision_id'))  # Ordenar por Admision_id
 
                 admisiones_count = admisiones_queryset.count()
 
@@ -1219,6 +1229,263 @@ class AdmisionesPorFechaYUsuario(APIView):
             response_data = {
                 "success": False,
                 "detail": "Faltan parámetros: FechaCreacionArchivo y/o UsuarioId.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)
+        
+
+
+########## FILTRO DE PUNTEO ADMISIONES ####
+
+class AdmisionesPorFechaYFacturado(APIView):
+    def get(self, request, format=None):
+        fecha = request.GET.get('Fecha')
+        creado_por = request.GET.get('CreadoPor')
+
+        if fecha and creado_por:
+            try:
+                with connections['datosipsndx'].cursor() as cursor:
+                    query_count = '''
+                    SELECT COUNT(*) as cantidad
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
+                    '''
+                    cursor.execute(query_count, [fecha, creado_por])
+                    admisiones_count = cursor.fetchone()[0]
+
+                    query_details = '''
+                    SELECT *
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) = %s AND CreadoPor = %s
+                    '''
+                    cursor.execute(query_details, [fecha, creado_por])
+                    admisiones_data = cursor.fetchall()
+
+                    admisiones_list = []
+                    for admision_data in admisiones_data:
+                        consecutivo = admision_data[0]
+                        admision_dict = {
+                            'Consecutivo': consecutivo,
+                        }
+
+                        # Obtener el prefijo de la tabla facturas
+                        query_facturas = '''
+                        SELECT prefijo
+                        FROM facturas
+                        WHERE AdmisionNo = %s
+                        '''
+                        cursor.execute(query_facturas, [consecutivo])
+                        prefijo = cursor.fetchone()
+
+                        if prefijo:
+                            admision_dict['Prefijo'] = prefijo[0]
+                        else:
+                            admision_dict['Prefijo'] = None
+
+                        admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": admisiones_count,
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: fecha y/o facturado_por.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)
+
+
+###### PUNTEO SUBDIRECCION DE PROCESOS Y DIRECCION ####
+
+
+class PunteoNeurodxSubdireccion(APIView):
+    def get(self, request, format=None):
+        fecha_inicio = request.GET.get('FechaInicio')
+        fecha_fin = request.GET.get('FechaFin')
+        usuario_id = request.GET.get('UsuarioId')
+
+        if fecha_inicio and fecha_fin and usuario_id:
+            try:
+                # Filtrar las admisiones por el rango de fechas y usuario, ordenar y agrupar por Admision_id
+                admisiones_queryset = (ArchivoFacturacion.objects
+                                       .filter(FechaCreacionArchivo__date__range=[fecha_inicio, fecha_fin], 
+                                               Usuario_id=usuario_id)
+                                       .values('Admision_id')
+                                       .annotate(cantidad=Count('Admision_id'))
+                                       .order_by('Admision_id'))  # Ordenar por Admision_id
+
+                admisiones_count = admisiones_queryset.count()
+
+                admisiones_list = []
+                for admision in admisiones_queryset:
+                    admision_dict = {
+                        'Consecutivo': admision['Admision_id'],
+                    }
+                    admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": admisiones_count,
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: FechaInicio, FechaFin y/o UsuarioId.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)
+
+
+##### PUNTEO ADMISIONES ANTARES, SUBDIRECCION ####
+class PunteoAntaresSubdireccion(APIView):
+    def get(self, request, format=None):
+        fecha_inicio = request.GET.get('FechaInicio')
+        fecha_fin = request.GET.get('FechaFin')
+        creado_por = request.GET.get('CreadoPor')
+
+        if fecha_inicio and fecha_fin and creado_por:
+            try:
+                with connections['datosipsndx'].cursor() as cursor:
+                    query_count = '''
+                    SELECT COUNT(*) as cantidad
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) BETWEEN %s AND %s AND CreadoPor = %s
+                    '''
+                    cursor.execute(query_count, [fecha_inicio, fecha_fin, creado_por])
+                    admisiones_count = cursor.fetchone()[0]
+
+                    query_details = '''
+                    SELECT *
+                    FROM admisiones
+                    WHERE DATE(FechaCreado) BETWEEN %s AND %s AND CreadoPor = %s
+                    '''
+                    cursor.execute(query_details, [fecha_inicio, fecha_fin, creado_por])
+                    admisiones_data = cursor.fetchall()
+
+                    admisiones_list = []
+                    for admision_data in admisiones_data:
+                        consecutivo = admision_data[0]
+                        admision_dict = {
+                            'Consecutivo': consecutivo,
+                        }
+
+                        # Obtener el prefijo de la tabla facturas
+                        query_facturas = '''
+                        SELECT prefijo
+                        FROM facturas
+                        WHERE AdmisionNo = %s
+                        '''
+                        cursor.execute(query_facturas, [consecutivo])
+                        prefijo = cursor.fetchone()
+
+                        if prefijo:
+                            admision_dict['Prefijo'] = prefijo[0]
+                        else:
+                            admision_dict['Prefijo'] = None
+
+                        admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": admisiones_count,
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: FechaInicio, FechaFin y/o CreadoPor.",
+                "cantidad": None,
+                "data": None
+            }
+            return JsonResponse(response_data, status=400)
+        
+
+### FILTRO POR TIPO DE DOCUMENTO######
+class AdmisionesConTiposDeDocumento(APIView):
+    def get(self, request, format=None):
+        fecha = request.GET.get('Fecha')
+        usuario_id = request.GET.get('UsuarioId')
+
+        if fecha and usuario_id:
+            try:
+                # Filtrar las admisiones por la fecha de FechaCreacionAntares y usuario, ordenar y agrupar por Admision_id
+                admisiones_queryset = (ArchivoFacturacion.objects
+                                       .filter(FechaCreacionAntares__date=fecha, 
+                                               Usuario_id=usuario_id)
+                                       .values('Admision_id')
+                                       .annotate(cantidad=Count('Admision_id'))
+                                       .order_by('Admision_id'))  # Ordenar por Admision_id
+
+                admisiones_list = []
+                for admision in admisiones_queryset:
+                    admision_id = admision['Admision_id']
+                    tipos_documento = (ArchivoFacturacion.objects
+                                       .filter(Admision_id=admision_id)
+                                       .values('Tipo'))
+                    tipos_documento_list = [tipo['Tipo'] for tipo in tipos_documento]
+
+                    admision_dict = {
+                        'Consecutivo': admision_id,
+                        'TiposDeDocumento': tipos_documento_list,
+                    }
+                    admisiones_list.append(admision_dict)
+
+                response_data = {
+                    "success": True,
+                    "detail": "Admisiones encontradas.",
+                    "cantidad": len(admisiones_list),
+                    "data": admisiones_list
+                }
+                return JsonResponse(response_data)
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al buscar admisiones: {str(e)}",
+                    "cantidad": None,
+                    "data": None
+                }
+                return JsonResponse(response_data, status=500)
+        else:
+            response_data = {
+                "success": False,
+                "detail": "Faltan parámetros: Fecha y/o UsuarioId.",
                 "cantidad": None,
                 "data": None
             }

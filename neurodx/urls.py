@@ -5,8 +5,9 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import CustomUserListView, LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView, AdmisionesPorFechaYFacturado, AdmisionesPorFechaYUsuario,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, TablaRadicacion, admisiones_con_observaciones_por_usuario, admisiones_con_revision_tesoreria, archivos_por_admision,  radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
+from gedocumental.views import AdmisionCuentaMedicaView, AdmisionTesoreriaView, AdmisionesConTiposDeDocumento, AdmisionesPorFechaYFacturado, AdmisionesPorFechaYUsuario,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, PunteoAntaresSubdireccion, PunteoNeurodxSubdireccion, TablaRadicacion, admisiones_con_observaciones_por_usuario, admisiones_con_revision_tesoreria, archivos_por_admision,  radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
 from controlfacturacion.views import AgendasView, CiPxApiView, CitasPxApiView, CodigoSoatList, ContratoTarifaListView, FiltroDetalleFacturaPorFecha, FiltroFacturaPorFecha, CitasSubcentroApiView
+from gedocumental.utils.codigoentidad import obtener_hallazgos
 
 
 
@@ -45,6 +46,10 @@ urlpatterns = [
     path('usuarios/', CustomUserListView.as_view(), name='customuser-list'),
     path('punteo/', AdmisionesPorFechaYFacturado.as_view(), name='admisiones_por_fecha_y_facturado'),
     path('punteo_neurodx/', AdmisionesPorFechaYUsuario.as_view(), name='admisiones_neurodx'),
+    path('hallazgos/', obtener_hallazgos , ),
+    path('punteo_neurodx_subdireccion/', PunteoNeurodxSubdireccion.as_view()),
+    path('punteo_antares_subdireccion/', PunteoAntaresSubdireccion.as_view()),
+    path('admisiones_con_tipos_documento/', AdmisionesConTiposDeDocumento.as_view()),
 ]
 
 

@@ -17,6 +17,7 @@ class ArchivoFacturacion(models.Model):
     NumeroAdmision = models.IntegerField() 
     Observacion = models.TextField(blank=True, null=True)
     FechaCreacionArchivo = models.DateTimeField(auto_now_add=True)
+    FechaCreacionAntares = models.DateTimeField(null=True, blank=True)
     RevisionPrimera = models.BooleanField(default=False)
     RevisionSegunda = models.BooleanField(default=False)
     RevisionTercera = models.BooleanField(default=False)

@@ -9,7 +9,7 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 
 from .models import CustomUser
-from .serializer import LoginSerializer, UserSerializer  # Importar Token aquí
+from .serializer import LoginSerializer, UserSerializer
 
 class RegisterView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()

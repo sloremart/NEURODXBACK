@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from gedocumental.modelsFacturacion import Admisiones
-from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
+from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionSinArchivo, ObservacionesArchivos
 from django.contrib.auth import authenticate
 
 
@@ -30,7 +30,7 @@ class RevisionCuentaMedicaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ArchivoFacturacion
-        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion', 'RevisionPrimera',  'RevisionSegunda']
+        fields = ['Admision_id', 'FechaCreacionArchivo', 'archivos_facturacion', 'RevisionPrimera',  'RevisionSegunda', 'UsuarioCuentasMedicas', 'UsuariosTesoreria']
 
 class AuditoriaCuentasMedicasSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,3 +42,8 @@ class AdmisionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Admisiones
         fields = '__all__'
+
+class ObservacionSinArchivoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ObservacionSinArchivo
+        fields = ['AdmisionId', 'Usuario', 'Descripcion', 'TipoArchivo', 'FechaObservacion']

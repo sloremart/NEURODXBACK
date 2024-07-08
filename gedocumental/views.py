@@ -1,4 +1,4 @@
-from datetime import datetime
+from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
@@ -16,15 +16,15 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from gedocumental.modelsFacturacion import Admisiones
 from gedocumental.utils.codigoentidad import obtener_tipos_documentos_por_entidad
-from .serializers import   ArchivoFacturacionSerializer,  RevisionCuentaMedicaSerializer
+from .serializers import   ArchivoFacturacionSerializer, ObservacionSinArchivoSerializer,  RevisionCuentaMedicaSerializer
 from django.http import Http404
-from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionesArchivos
+from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionSinArchivo, ObservacionesArchivos
 from django.conf import settings
 import os
 from django.db.models import Count
 from django.views.decorators.http import require_GET
 from datetime import datetime, timedelta
-
+import datetime
 
 
 class GeDocumentalView(APIView):
@@ -91,12 +91,13 @@ class ArchivoUploadView(APIView):
     def post(self, request, consecutivo, format=None):
         try:
             user_id = request.data.get('userId')
+            regimen = request.data.get('regimen')  # Obtener el campo regimen del request
 
             # Obtener la admisión
             admision = Admisiones.objects.using('datosipsndx').get(Consecutivo=consecutivo)
             
             # Obtener la fecha de creación desde la base de datos
-            fecha_creacion_antares = admision.FechaCreado
+            fecha_creacion_antares = admision.FechaCreado.date()  # Obtener solo la parte de la fecha
 
             # Crear el directorio para guardar los archivos
             folder_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'archivosFacturacion', str(admision.Consecutivo))
@@ -115,16 +116,16 @@ class ArchivoUploadView(APIView):
                 # Construir la ruta relativa del archivo
                 ruta_relativa = os.path.relpath(archivo_path, settings.MEDIA_ROOT)
 
-                # Crear el objeto ArchivoFacturacion
-                fecha_creacion_archivo = datetime.now().replace(second=0, microsecond=0)
-                fecha_formateada = fecha_creacion_archivo.strftime('%Y-%m-%d %H:%M:%S')  # Formatear la fecha sin segundos ni milisegundos
+                fecha_creacion_archivo = datetime.datetime.now().replace(second=0, microsecond=0)
+                fecha_formateada = fecha_creacion_archivo.strftime('%Y-%m-%d %H:%M:%S')
                 archivo_obj = ArchivoFacturacion(
                     Admision_id=admision.Consecutivo,
                     Tipo=request.data.get('tipoDocumentos', None),
                     RutaArchivo=ruta_relativa,
-                    FechaCreacionArchivo=fecha_formateada,
-                    FechaCreacionAntares=fecha_creacion_antares,  # Asignar la fecha de creación de Antares
-                    Usuario_id=user_id  
+                    FechaCreacionArchivo=fecha_creacion_archivo,  # Guardar solo la fecha
+                    FechaCreacionAntares=fecha_creacion_antares,  # Asignar solo la fecha de creación de Antares
+                    Usuario_id=user_id,
+                    Regimen=regimen  # Asignar el campo regimen
                 )
                 archivo_obj.NumeroAdmision = admision.Consecutivo
                 archivo_obj.save()
@@ -141,14 +142,13 @@ class ArchivoUploadView(APIView):
 
             return JsonResponse(response_data, status=status.HTTP_201_CREATED)
 
-        except Admisiones.objects.using('datosipsndx').DoesNotExist:
+        except Admisiones.DoesNotExist:
             response_data = {
                 "success": False,
                 "detail": f"No se encontró la admisión con consecutivo {consecutivo}",
                 "data": None
             }
             return JsonResponse(response_data, status=status.HTTP_404_NOT_FOUND)
-
 
 ##### EDICION DE ARCHIVOS ##########
 
@@ -285,6 +285,7 @@ class AdmisionCuentaMedicaView(APIView):
         data = request.data
         archivos = data.get('archivos', [])
         consecutivo_consulta = data.get('consecutivoConsulta')
+        usuario_cuentas_medicas_id = request.data.get('UsuarioCuentasMedicas')
 
         try:
             with transaction.atomic():
@@ -295,19 +296,24 @@ class AdmisionCuentaMedicaView(APIView):
                         archivo_serializer = RevisionCuentaMedicaSerializer(archivo_existente, data=archivo_data, partial=True)
 
                         if archivo_serializer.is_valid():
-                            archivo_serializer.save()
+                            archivo_obj = archivo_serializer.save()
+                            # Si hay observación o RevisionPrimera es True, guarda UsuarioCuentasMedicas
+                            observacion = archivo_data.get('Observacion')
+                            if observacion or archivo_data.get('RevisionPrimera', False):
+                                archivo_obj.UsuarioCuentasMedicas_id = usuario_cuentas_medicas_id
+                                archivo_obj.save()
+                                print(f"UsuarioCuentasMedicas asignado: {archivo_obj.UsuarioCuentasMedicas_id}")
+
+                            if observacion:
+                                observacion_obj = ObservacionesArchivos.objects.create(
+                                    IdArchivo=archivo_existente,
+                                    Descripcion=observacion,
+                                    ObservacionCuentasMedicas=True  
+                                )
+                                print("Observación creada:", observacion_obj)
                         else:
                             errors = archivo_serializer.errors
                             return Response({"success": False, "message": "Error de validación en los datos del archivo", "error_details": errors}, status=status.HTTP_400_BAD_REQUEST)
-
-                        observacion = archivo_data.get('Observacion')
-                        if observacion:
-                            observacion_obj = ObservacionesArchivos.objects.create(
-                                IdArchivo=archivo_existente,
-                                Descripcion=observacion,
-                                ObservacionCuentasMedicas=True  
-                            )
-                            print("Observación creada:", observacion_obj)
 
                     except ArchivoFacturacion.DoesNotExist:
                         return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
@@ -324,33 +330,44 @@ class AdmisionCuentaMedicaView(APIView):
             return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 ######TESORERIA 
-
 class AdmisionTesoreriaView(APIView):
     def post(self, request, *args, **kwargs):
         print("Datos recibidos en la solicitud:", request.data)
         data = request.data
         archivos = data.get('archivos', [])
         consecutivo_consulta = data.get('consecutivoConsulta')
+        usuario_tesoreria_id = request.data.get('UsuariosTesoreria')
 
         try:
             with transaction.atomic():
                 for archivo_data in archivos:
                     archivo_id = archivo_data.get('IdArchivo')
-                    revision_segunda = archivo_data.get('RevisionSegunda', False)
+                    try:
+                        archivo_existente = ArchivoFacturacion.objects.get(IdArchivo=archivo_id)
+                        archivo_serializer = RevisionCuentaMedicaSerializer(archivo_existente, data=archivo_data, partial=True)
 
-                    archivo = ArchivoFacturacion.objects.get(IdArchivo=archivo_id)
-                    archivo.RevisionSegunda = revision_segunda
-                    archivo.save()
+                        if archivo_serializer.is_valid():
+                            archivo_obj = archivo_serializer.save()
+                            # Si hay observación o RevisionSegunda es True, guarda UsuariosTesoreria
+                            observacion = archivo_data.get('Observacion')
+                            if observacion or archivo_data.get('RevisionSegunda', False):
+                                archivo_obj.UsuariosTesoreria_id = usuario_tesoreria_id
+                                archivo_obj.save()
+                                print(f"UsuariosTesoreria asignado: {archivo_obj.UsuariosTesoreria_id}")
 
-                    # Aquí agregamos la lógica para crear la observación
-                    observacion = archivo_data.get('Observacion')
-                    if observacion:
-                        observacion_obj = ObservacionesArchivos.objects.create(IdArchivo=archivo, Descripcion=observacion)
-                        print("Observación creada:", observacion_obj)
-                        observacion_obj.ObservacionTesoreria = True  # Se establece en True si es para tesorería
-                        observacion_obj.save()
+                            if observacion:
+                                observacion_obj = ObservacionesArchivos.objects.create(
+                                    IdArchivo=archivo_existente,
+                                    Descripcion=observacion,
+                                    ObservacionTesoreria=True  # Se establece en True si es para tesorería
+                                )
+                                print("Observación creada:", observacion_obj)
+                        else:
+                            errors = archivo_serializer.errors
+                            return Response({"success": False, "message": "Error de validación en los datos del archivo", "error_details": errors}, status=status.HTTP_400_BAD_REQUEST)
 
-                    print(f"Se actualizó el campo RevisionSegunda para el archivo {archivo_id}")
+                    except ArchivoFacturacion.DoesNotExist:
+                        return Response({"success": False, "message": f"Archivo con ID {archivo_id} no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 
                 todos_revision_segunda_true = all(archivo_data.get('RevisionSegunda', False) for archivo_data in archivos)
                 print("Todos los archivos tienen RevisionSegunda en True:", todos_revision_segunda_true)
@@ -624,40 +641,47 @@ class FiltroTesoreria(APIView):
 
         queryset = AuditoriaCuentasMedicas.objects.all()
 
+        admisiones_codigo = []
         if codigo_entidad:
-            admisiones_codigo = Admisiones.objects.filter(CodigoEntidad=codigo_entidad).values_list('Consecutivo', flat=True)
+            # Usar explícitamente la base de datos 'datosipsndx'
+            admisiones_codigo = list(Admisiones.objects.using('datosipsndx').filter(CodigoEntidad=codigo_entidad).values_list('Consecutivo', flat=True))
             queryset = queryset.filter(AdmisionId__in=admisiones_codigo)
 
         response_data = []
 
-        with connections['datosipsndx'].cursor() as cursor:
-            for auditoria in queryset:
-                cursor.execute('''
-                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, TipoAfiliado
-                    FROM admisiones
-                    WHERE Consecutivo = %s
-                ''', [auditoria.AdmisionId])
-                admision_data = cursor.fetchone()
+        try:
+            # Usar la conexión correcta para la consulta
+            with connections['datosipsndx'].cursor() as cursor:
+                for auditoria in queryset:
+                    if auditoria.AdmisionId in admisiones_codigo:
+                        cursor.execute('''
+                            SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, TipoAfiliado
+                            FROM admisiones
+                            WHERE Consecutivo = %s
+                        ''', [auditoria.AdmisionId])
+                        admision_data = cursor.fetchone()
 
-                if admision_data:
-                    if not revision_cuentas_medicas or bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas:
-                        data = {
-                            'AdmisionId': auditoria.AdmisionId,
-                            'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
-                            'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
-                            'Observacion': auditoria.Observacion,
-                            'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
-                            'RevisionTesoreria': auditoria.RevisionTesoreria,
-                            'Consecutivo': admision_data[0],
-                            'IdPaciente': admision_data[1],
-                            'CodigoEntidad': admision_data[2],
-                            'NombreResponsable': admision_data[3],
-                            'CedulaResponsable': admision_data[4],
-                            'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
-                        }
-                        response_data.append(data)
+                        if admision_data:
+                            if not revision_cuentas_medicas or bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas:
+                                data = {
+                                    'AdmisionId': auditoria.AdmisionId,
+                                    'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
+                                    'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
+                                    'Observacion': auditoria.Observacion,
+                                    'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                                    'RevisionTesoreria': auditoria.RevisionTesoreria,
+                                    'Consecutivo': admision_data[0],
+                                    'IdPaciente': admision_data[1],
+                                    'CodigoEntidad': admision_data[2],
+                                    'NombreResponsable': admision_data[3],
+                                    'FacturaNo': admision_data[4] if len(admision_data) > 5 else None,
+                                }
+                                response_data.append(data)
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
         return Response(response_data)
+
 
 ###### RADICACION - CUENTAS MEDICAS #####
 def radicar_compensar_view(request, numero_admision):
@@ -1125,78 +1149,22 @@ def radicar_other_view(request, numero_admision):
         return JsonResponse(response_data, status=500)
     
 
-########## FILTRO DE PUNTEO ADMISIONES ####
 
-import logging
 
-logger = logging.getLogger(__name__)
-
-class FiltroTesoreria(APIView):
-    def get(self, request):
-        fecha_creacion_str = request.query_params.get('FechaCreacion', None)
-        revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
-        codigo_entidad = request.query_params.get('CodigoEntidad', None)
-
-        try:
-            queryset = AuditoriaCuentasMedicas.objects.all()
-
-            if codigo_entidad:
-                with connections['datosipsndx'].cursor() as cursor:
-                    cursor.execute('''
-                        SELECT Consecutivo
-                        FROM admisiones
-                        WHERE CodigoEntidad = %s
-                    ''', [codigo_entidad])
-                    admisiones_codigo = [row[0] for row in cursor.fetchall()]
-                queryset = queryset.filter(AdmisionId__in=admisiones_codigo)
-
-            response_data = []
-
-            with connections['datosipsndx'].cursor() as cursor:
-                for auditoria in queryset:
-                    cursor.execute('''
-                        SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, TipoAfiliado
-                        FROM admisiones
-                        WHERE Consecutivo = %s
-                    ''', [auditoria.AdmisionId])
-                    admision_data = cursor.fetchone()
-
-                    if admision_data:
-                        if not revision_cuentas_medicas or bool(int(revision_cuentas_medicas)) == auditoria.RevisionCuentasMedicas:
-                            data = {
-                                'AdmisionId': auditoria.AdmisionId,
-                                'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
-                                'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
-                                'Observacion': auditoria.Observacion,
-                                'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
-                                'RevisionTesoreria': auditoria.RevisionTesoreria,
-                                'Consecutivo': admision_data[0],
-                                'IdPaciente': admision_data[1],
-                                'CodigoEntidad': admision_data[2],
-                                'NombreResponsable': admision_data[3],
-                                'CedulaResponsable': admision_data[4],
-                                'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
-                            }
-                            response_data.append(data)
-
-            return Response(response_data)
-        except Exception as e:
-            logger.error(f'Error al obtener datos: {str(e)}')
-            return Response({'error': str(e)}, status=500)
 
 
 ########## PUNTEO APP###########class AdmisionesPorFechaYUsuario(APIView):
 
 class AdmisionesPorFechaYUsuario(APIView):
     def get(self, request, format=None):
-        fecha_creacion_archivo = request.GET.get('FechaCreacionArchivo')
+        fecha_creacion_archivo = request.GET.get('FechaCreacionAntares')
         usuario_id = request.GET.get('UsuarioId')
 
         if fecha_creacion_archivo and usuario_id:
             try:
                 # Filtrar las admisiones por fecha de creación y usuario, ordenar y agrupar por Admision_id
                 admisiones_queryset = (ArchivoFacturacion.objects
-                                       .filter(FechaCreacionArchivo__date=fecha_creacion_archivo, Usuario_id=usuario_id)
+                                       .filter(FechaCreacionAntares__date=fecha_creacion_archivo, Usuario_id=usuario_id)
                                        .values('Admision_id')
                                        .annotate(cantidad=Count('Admision_id'))
                                        .order_by('Admision_id'))  # Ordenar por Admision_id
@@ -1323,7 +1291,7 @@ class PunteoNeurodxSubdireccion(APIView):
             try:
                 # Filtrar las admisiones por el rango de fechas y usuario, ordenar y agrupar por Admision_id
                 admisiones_queryset = (ArchivoFacturacion.objects
-                                       .filter(FechaCreacionArchivo__date__range=[fecha_inicio, fecha_fin], 
+                                       .filter(FechaCreacionAntares__date__range=[fecha_inicio, fecha_fin], 
                                                Usuario_id=usuario_id)
                                        .values('Admision_id')
                                        .annotate(cantidad=Count('Admision_id'))
@@ -1490,3 +1458,48 @@ class AdmisionesConTiposDeDocumento(APIView):
                 "data": None
             }
             return JsonResponse(response_data, status=400)
+        
+
+class ActualizarRegimenArchivosView(APIView):
+    def post(self, request, consecutivo, format=None):
+        regimen = request.data.get('regimen')
+        
+        if not regimen or regimen not in ['C', 'S']:
+            return Response({"success": False, "message": "Regimen inválido"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            with transaction.atomic():
+                archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=consecutivo).update(Regimen=regimen)
+                
+                if archivos_actualizados == 0:
+                    return Response({"success": False, "message": f"No se encontraron archivos para la admisión {consecutivo}"}, status=status.HTTP_404_NOT_FOUND)
+                
+                return Response({"success": True, "message": f"Regimen actualizado a {regimen} para {archivos_actualizados} archivos de la admisión {consecutivo}"}, status=status.HTTP_200_OK)
+        
+        except Exception as e:
+            return Response({"success": False, "message": "Error interno del servidor", "error_details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+### CREAR OBSERVACIONES SIN ARCHIVO PARA LOS RESULTADOS QUE NO ESTAN CARGADOS !
+class AgregarObservacionSinArchivoView(APIView):
+    def post(self, request, *args, **kwargs):
+        serializer = ObservacionSinArchivoSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"success": True, "message": "Observación sin archivo agregada correctamente"}, status=status.HTTP_201_CREATED)
+        return Response({"success": False, "message": "Error de validación", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+class ObservacionesPorUsuario(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, user_id):
+        try:
+            user = user.objects.get(pk=user_id)
+        except user.DoesNotExist:
+            return Response({'error': 'Usuario no encontrado'}, status=404)
+
+        observaciones = ObservacionSinArchivo.objects.filter(Usuario=user)
+        serializer = ObservacionSinArchivoSerializer(observaciones, many=True)
+        return Response(serializer.data)

@@ -21,7 +21,9 @@ class ArchivoFacturacion(models.Model):
     RevisionPrimera = models.BooleanField(default=False)
     RevisionSegunda = models.BooleanField(default=False)
     RevisionTercera = models.BooleanField(default=False)
-    
+    UsuarioCuentasMedicas = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='cuentas_medicas_archivos')
+    UsuariosTesoreria = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='tesoreria_archivos')
+    Regimen = models.CharField(max_length=1, null=True, blank=True) 
 
     def save(self, *args, **kwargs):
         if self.RutaArchivo:
@@ -99,3 +101,26 @@ def create_observacion_archivo(sender, instance, created, **kwargs):
             ObservacionCuentasMedicas=observacion_cuentas_medicas,
             ObservacionTesoreria=observacion_tesoreria
         )
+
+
+
+#### PARA CREAR OBSERVACIONES SIN ARCHIVOS ######
+
+class ObservacionSinArchivo(models.Model):
+    AdmisionId = models.IntegerField()
+    Usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    Descripcion = models.TextField()
+    TipoArchivo = models.CharField(max_length=50)
+    FechaObservacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'observaciones_sin_archivo'
+        managed = True
+        verbose_name = 'Observación sin Archivo'
+        verbose_name_plural = 'Observaciones sin Archivo'
+
+    def __str__(self):
+        return f'Observación {self.id} para la admisión {self.AdmisionId}'
+
+
+

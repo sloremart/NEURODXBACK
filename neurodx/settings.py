@@ -23,7 +23,7 @@ SECRET_KEY = 'django-insecure-+749%6yh6m6u-h!ft8j&1*exs16d3$vz=i^69hjv@!%exade*!
 
 
 DEBUG = True
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['192.168.1.178']  
 
 
 
@@ -86,38 +86,26 @@ WSGI_APPLICATION = 'neurodx.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'HOST': 'localhost',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-         'USER': 'root',
-        'PASSWORD': 'root', 
+        'USER': 'antares',
+        'PASSWORD': 'dic2401', 
         'NAME': 'neurodx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
         },
     },
      'datosipsndx': {
-        'ENGINE':'django.db.backends.mysql',
-         'HOST': 'localhost',
+        'ENGINE': 'mysql.connector.django',
+        'HOST': '192.168.1.99',
         'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root',
+        'USER': 'antares',
+        'PASSWORD': 'dic2401',
         'NAME': 'datosipsndx',
         'OPTIONS': {
             'autocommit': True,
-            'charset': 'utf8mb4',
-        },
-    },
-     'contabilidadndx': {
-        'ENGINE':'django.db.backends.mysql',
-         'HOST': 'localhost',
-        'PORT': '3306',
-        'USER': 'root',
-        'PASSWORD': 'root',
-        'NAME': 'contabilidadndx',
-        'OPTIONS': {
-            'autocommit': True,
-            'charset': 'utf8mb4',
+            'charset': 'utf8mb3',
         },
     },
 }
@@ -147,7 +135,7 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'America/Bogota'
+TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
@@ -165,7 +153,7 @@ STATICFILES_DIRS = [
     str(BASE_DIR / 'build/static')
 ]
 
-ROOT_PATH_FILES_STORAGE = 'C:/Users/loren/Documents/Proyectos'
+ROOT_PATH_FILES_STORAGE = '/home/server'
 MEDIA_ROOT = os.path.join(ROOT_PATH_FILES_STORAGE, 'media')
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
@@ -189,6 +177,7 @@ CORS_ALLOW_METHODS = [
 AUTH_USER_MODEL = 'login.CustomUser'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  
+   "http://192.168.1.178:3000"
 ]
 DEFAULT_AUTO_FIELD = 'django.db.models.AutoField'
 CSRF_COOKIE_SECURE = False
@@ -206,6 +195,11 @@ CORS_ALLOW_HEADERS = [
 ]
 
 JWT_EXPIRATION_DELTA = datetime.timedelta(minutes=15)
+
+
+
+
+
 
 
 

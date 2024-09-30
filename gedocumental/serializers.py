@@ -46,4 +46,4 @@ class AdmisionSerializer(serializers.ModelSerializer):
 class ObservacionSinArchivoSerializer(serializers.ModelSerializer):
     class Meta:
         model = ObservacionSinArchivo
-        fields = ['AdmisionId', 'Usuario', 'Descripcion', 'TipoArchivo', 'FechaObservacion']
+        fields = '__all__'

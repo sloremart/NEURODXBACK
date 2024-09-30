@@ -5,9 +5,10 @@ from django.urls import path
 from django.conf.urls.static import static
 from login.registroViews import CustomUserListView, LoginView, RegisterView
 from citas.views import CitasApiView
-from gedocumental.views import ActualizarRegimenArchivosView, AdmisionCuentaMedicaView, AdmisionTesoreriaView, AdmisionesConTiposDeDocumento, AdmisionesPorFechaYFacturado, AdmisionesPorFechaYUsuario, AgregarObservacionSinArchivoView,  ArchivoEditView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, ObservacionesPorUsuario, PunteoAntaresSubdireccion, PunteoNeurodxSubdireccion, TablaRadicacion, admisiones_con_observaciones_por_usuario, admisiones_con_revision_tesoreria, archivos_por_admision,  radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_other_view, radicar_salud_total_view, radicar_sanitas_evento_view
+from gedocumental.views import ActualizarRegimenArchivosView, AdmisionCuentaMedicaView, AdmisionTesoreriaView, AdmisionesConTiposDeDocumento, AdmisionesPorFechaYFacturado, AdmisionesPorFechaYUsuario, AgregarObservacionSinArchivoView,  ArchivoEditView, ArchivoFacturacionDeleteView, ArchivoUploadView, CodigoListView, FiltroAuditoriaCuentasMedicas, FiltroTesoreria, GeDocumentalView, ObservacionesPorUsuario, PunteoAntaresSubdireccion, PunteoNeurodxSubdireccion, RevisarObservacion, TablaRadicacion, actualizar_correciones_cm, actualizar_modificado_revisor, admisiones_con_id_revisor, admisiones_con_observaciones_por_usuario, admisiones_con_revision_tesoreria, admisiones_revision_para_cm, archivos_por_admision,  radicar_capitalsalud_view, radicar_colsanitas_view, radicar_compensar_view,  downloadFile, radicar_mes01_view, radicar_other_view, radicar_salud_total_view, radicar_san02_view, radicar_sanitas_evento_view
 from controlfacturacion.views import AgendasView, CiPxApiView, CitasPxApiView, CodigoSoatList, ContratoTarifaListView, FiltroDetalleFacturaPorFecha, FiltroFacturaPorFecha, CitasSubcentroApiView
 from gedocumental.utils.codigoentidad import obtener_hallazgos
+from subdireccionprocesos.views import AdmisionesConObservacionesView, AdmisionesPorUsuario, ArchivosRevisadosPorCM
 
 
 
@@ -30,9 +31,11 @@ urlpatterns = [
     path('filtro_tesoreria/', FiltroTesoreria.as_view(), name='filtro_tesoreria'),
     path('radicar_compensar/<int:numero_admision>/', radicar_compensar_view, name='radicar_compensar'),
     path('radicar_salud_total/<int:numero_admision>/', radicar_salud_total_view, ),   
-    path('radicar_sanitas_evento/<int:numero_admision>/', radicar_sanitas_evento_view, ),  
+    path('radicar_sanitas_evento/<int:numero_admision>/', radicar_sanitas_evento_view, ), 
+    path('radicar_mes01_view/<int:numero_admision>/', radicar_mes01_view, ),  
     path('radicar_colsanitas/<int:numero_admision>/', radicar_colsanitas_view, ),  
-    path('radicar_capital_salud/<int:numero_admision>/', radicar_capitalsalud_view, ),  
+    path('radicar_capital_salud/<int:numero_admision>/', radicar_capitalsalud_view, ), 
+    path('radicar_san02/<int:numero_admision>/', radicar_san02_view, ),   
     path('radicar_otros/<int:numero_admision>/', radicar_other_view, ),  
     path('tabla_radicacion/', TablaRadicacion.as_view(), name='tabla_radicacion'),
     path('detallefacturacion/', FiltroDetalleFacturaPorFecha.as_view(), name='facturacion'),
@@ -53,6 +56,16 @@ urlpatterns = [
     path('actualizar_regimen/<int:consecutivo>/', ActualizarRegimenArchivosView.as_view(), name='actualizar_regimen'),
     path('agregar_observacion_sin_archivo/', AgregarObservacionSinArchivoView.as_view(), name='agregar_observacion_sin_archivo'),
     path('observaciones/<int:user_id>/', ObservacionesPorUsuario.as_view(), name='observaciones-por-usuario'),
+    path('revisar_observacion/<int:admision_id>/', RevisarObservacion.as_view(), name='revisar-observacion'), #
+    path('actualizar_modificado_revisor/', actualizar_modificado_revisor, name='actualizar_modificado_revisor'),#envio de admsion al cm y tesoreria ya modificada
+    path('admisiones_con_id_revisor/<int:id_revisor>/', admisiones_con_id_revisor, name='admisiones_con_id_revisor'),
+    path('eliminar_archivo_facturacion/', ArchivoFacturacionDeleteView.as_view(), name='archivo_facturacion_delete'),
+    path('actualizar_correciones_cm/', actualizar_correciones_cm, name='actualizar_correciones_cm'),
+    path('admisiones_enviadas_cm/<int:id_revisor>/', admisiones_revision_para_cm, name='admisiones_revision_para_cm'),
+    path('admisiones_auditoria_subprocesos/',  AdmisionesPorUsuario.as_view(), name='admisiones_auditoria_subprocesos'),
+    path('admision_revisadas_cm/',  ArchivosRevisadosPorCM.as_view(), name='admisiones_revisadas'),
+    path('listado_admsiones_observaciones/',  AdmisionesConObservacionesView.as_view(), name='admisiones_revisadas'),
+
 ]
 
 

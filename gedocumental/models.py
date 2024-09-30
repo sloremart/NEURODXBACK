@@ -6,15 +6,17 @@ from django.contrib.auth.models import User
 from django.conf import settings
 
 
+from django.core.files.storage import default_storage
+
 
 class ArchivoFacturacion(models.Model):
     IdArchivo = models.AutoField(primary_key=True)
-    Admision_id =  models.IntegerField() 
+    Admision_id = models.IntegerField()
     Tipo = models.CharField(max_length=50, choices=[])
     Usuario = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
     NombreArchivo = models.CharField(max_length=255, default="sin_nombre")
     RutaArchivo = models.FileField(upload_to='gdocumental/archivosFacturacion', max_length=255, blank=True, null=True)
-    NumeroAdmision = models.IntegerField() 
+    NumeroAdmision = models.IntegerField()
     Observacion = models.TextField(blank=True, null=True)
     FechaCreacionArchivo = models.DateTimeField(auto_now_add=True)
     FechaCreacionAntares = models.DateTimeField(null=True, blank=True)
@@ -23,7 +25,13 @@ class ArchivoFacturacion(models.Model):
     RevisionTercera = models.BooleanField(default=False)
     UsuarioCuentasMedicas = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='cuentas_medicas_archivos')
     UsuariosTesoreria = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='tesoreria_archivos')
-    Regimen = models.CharField(max_length=1, null=True, blank=True) 
+    Regimen = models.CharField(max_length=1, null=True, blank=True)
+    Radicado = models.BooleanField(default=False)
+    Modificado1 = models.BooleanField(null=True, blank=True)
+    Modificado2 = models.BooleanField(null=True, blank=True)
+    Modificado3 = models.BooleanField(null=True, blank=True)
+    IdRevisor = models.IntegerField(null=True, blank=True)
+    FechaRevisionPrimera = models.DateField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if self.RutaArchivo:
@@ -33,16 +41,14 @@ class ArchivoFacturacion(models.Model):
     def delete(self, *args, **kwargs):
         if self.RutaArchivo:
             storage, path = self.RutaArchivo.storage, self.RutaArchivo.path
-            storage.delete(path)
+            # Verificar que el archivo corresponde a la instancia específica antes de eliminarlo
+            if storage.exists(path):
+                storage.delete(path)
         super(ArchivoFacturacion, self).delete(*args, **kwargs)
 
     class Meta:
         db_table = 'archivos'
-        managed = True        
-
-
-
-
+        managed = True
         
 ######### CUENTAS MEDICAS - TALENTO HUMANO   ###########
     
@@ -112,12 +118,16 @@ class ObservacionSinArchivo(models.Model):
     Descripcion = models.TextField()
     TipoArchivo = models.CharField(max_length=50)
     FechaObservacion = models.DateTimeField(auto_now_add=True)
+    Revisada = models.BooleanField(default=False)
+    IdRevisor = models.IntegerField(null=True, blank=True)
+    
+    
 
     class Meta:
         db_table = 'observaciones_sin_archivo'
         managed = True
         verbose_name = 'Observación sin Archivo'
-        verbose_name_plural = 'Observaciones sin Archivo'
+        verbose_name_plural = 'Observaciones sin Archivo'   
 
     def __str__(self):
         return f'Observación {self.id} para la admisión {self.AdmisionId}'

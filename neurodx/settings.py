@@ -108,6 +108,18 @@ DATABASES = {
             'charset': 'utf8mb4',
         },
     },
+     'contabilidadndx': {
+        'ENGINE':'django.db.backends.mysql',
+         'HOST': 'localhost',
+        'PORT': '3306',
+        'USER': 'root',
+        'PASSWORD': 'root',
+        'NAME': 'contabilidadndx',
+        'OPTIONS': {
+            'autocommit': True,
+            'charset': 'utf8mb4',
+        },
+    },
 }
 
 # Password validation

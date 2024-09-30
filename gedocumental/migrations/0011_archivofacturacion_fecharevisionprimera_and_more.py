@@ -13,11 +13,5 @@ class Migration(migrations.Migration):
     
      
      
-     
-      
-        migrations.AddField(
-            model_name='observacionsinarchivo',
-            name='IdRevisor',
-            field=models.IntegerField(blank=True, null=True),
-        ),
+ 
     ]

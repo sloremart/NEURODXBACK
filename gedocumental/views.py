@@ -1,4 +1,4 @@
-from rest_framework.permissions import IsAuthenticated
+
 from django.utils import timezone
 from django.utils.timezone import make_aware
 import shutil
@@ -8,7 +8,7 @@ from urllib.parse import unquote
 from django.db import IntegrityError, transaction
 from django.db.models.functions import TruncDate
 from django.db import connections
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,6 +16,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.decorators import api_view
 from gedocumental.modelsFacturacion import Admisiones
 from gedocumental.utils.codigoentidad import obtener_tipos_documentos_por_entidad
+from login.models import CustomUser
 from .serializers import   ArchivoFacturacionSerializer, ObservacionSinArchivoSerializer,  RevisionCuentaMedicaSerializer
 from django.http import Http404
 from .models import ArchivoFacturacion, AuditoriaCuentasMedicas, ObservacionSinArchivo, ObservacionesArchivos
@@ -25,9 +26,9 @@ from django.db.models import Count
 from django.views.decorators.http import require_GET
 from datetime import datetime, timedelta
 from urllib.parse import unquote
-import re
+from rest_framework.permissions import AllowAny
 from datetime import date
-
+from rest_framework.decorators import api_view, permission_classes
 
 
 
@@ -453,10 +454,12 @@ class FiltroAuditoriaCuentasMedicas(APIView):
         revision_cuentas_medicas = request.query_params.get('RevisionCuentasMedicas', None)
         codigo_entidad = request.query_params.get('CodigoEntidad', None)
 
-        if not user_id:
-            return Response({"error": "user_id is required"}, status=400)
+        # Obtener todos los archivos de facturación, y luego aplicar filtros si hay parámetros
+        archivos_facturacion = ArchivoFacturacion.objects.all()
 
-        archivos_facturacion = ArchivoFacturacion.objects.filter(Usuario_id=user_id)
+        # Si 'user_id' está presente, aplicar el filtro por 'Usuario_id'
+        if user_id:
+            archivos_facturacion = archivos_facturacion.filter(Usuario_id=user_id)
 
         # Convertir fechas de inicio y fin a objetos datetime
         try:
@@ -472,17 +475,20 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                 (Q(FechaCreacionArchivo__gte=fecha_inicio) & Q(FechaCreacionArchivo__lte=fecha_fin))
             )
 
+        # Filtrar por 'RevisionCuentasMedicas' si está presente
         if revision_cuentas_medicas is not None:
             if revision_cuentas_medicas == "0":
                 archivos_facturacion = archivos_facturacion.filter(RevisionPrimera=False)
             elif revision_cuentas_medicas == "1":
                 archivos_facturacion = archivos_facturacion.filter(RevisionPrimera=True)
 
+        # Obtener las admisiones asociadas
         admision_ids = archivos_facturacion.values_list('Admision_id', flat=True).distinct()
         queryset = AuditoriaCuentasMedicas.objects.filter(AdmisionId__in=admision_ids)
 
         response_data = []
 
+        # Ejecutar la consulta a la base de datos externa
         with connections['datosipsndx'].cursor() as cursor:
             for auditoria in queryset:
                 cursor.execute('''
@@ -493,6 +499,7 @@ class FiltroAuditoriaCuentasMedicas(APIView):
                 admision_data = cursor.fetchone()
 
                 if admision_data:
+                    # Filtrar por 'CodigoEntidad' si está presente
                     if not codigo_entidad or codigo_entidad == admision_data[2]:
                         archivo_facturacion = archivos_facturacion.filter(Admision_id=auditoria.AdmisionId).first()
 
@@ -521,38 +528,15 @@ class FiltroAuditoriaCuentasMedicas(APIView):
 
 
 
+
 class CodigoListView(APIView):
     def get(self, request, format=None):
         codigos = [
-            'SAN01',
-            'SAN02',
-            'POL11',
-            'POL12',
-            'PML01',
-            'COM01',
-            'CAJACO',
-            'CAJASU',
-            'SAL01',
-            'CAP01',
-            'UNA01',
-            'DM02',
-            'EQV01',
-            'PAR01',
-            'CHM01',
-            'CHM02',
-            'COL01',
-            'MES01',
-            'UNA02',
-            'MUL01',
-            'par01',
-            'FOM01',
-            'IPSOL1',
-            'AIR01',
-            'AXA01',
-            'POL13',
-            'BOL01',
-          
-        ]
+    'SAN01', 'SAN02', 'POL11', 'PML01', 'COM01', 'SAL01', 'CAP01', 'DM02', 'EQV01', 
+    'PAR01', 'CHM01', 'CHM02', 'COL01', 'MES01', 'UNA02', 'MUL01', 'par01', 'FOM01', 
+    'IPSOL1', 'AIR01', 'AXA01', 'POL13', 'BOL01', 'CON01', 'SUR01', 'MUN01', 'ADR01', 
+    'MAP01', 'LIB01', 'EQU01', 'EST01', 'BOL02', 'SOL02'
+]
         return Response(codigos)
     
 
@@ -799,8 +783,24 @@ class FiltroTesoreria(APIView):
 
 ###### RADICACION - CUENTAS MEDICAS #####
 @api_view(['GET'])
-def radicar_compensar_view(request, numero_admision):
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_compensar_view(request, numero_admision, idusuario):
     try:
+        # Verificar si el idusuario existe en la base de datos y obtener el nombre de usuario
+        try:
+            user = CustomUser.objects.get(id=idusuario)
+            nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+            
+            # Sanitizar el nombre del usuario si es necesario
+            nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+            print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+        except CustomUser.DoesNotExist:
+            response_data = {
+                "success": False,
+                "detail": "Usuario no encontrado."
+            }
+            return JsonResponse(response_data, status=404)
+
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
         if archivos_a_verificar.exists() and archivos_a_verificar.filter(Radicado=True).exists():
@@ -817,10 +817,48 @@ def radicar_compensar_view(request, numero_admision):
 
         admision_data = admision_response.data.get('data')
         factura_numero = admision_data.get('FacturaNo')
-        t_regimen = admision_data.get('tRegimen')
 
-        if not factura_numero or t_regimen is None:
-            raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+        if not factura_numero:
+            response_data = {
+                "success": False,
+                "detail": "La admisión no tiene el número de factura."
+            }
+            return JsonResponse(response_data, status=400)
+
+        # Obtener el régimen desde el primer archivo de facturación relacionado
+        archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
+        if not archivo_facturacion:
+            response_data = {
+                "success": False,
+                "detail": f"No se encontró el archivo de facturación para la admisión {numero_admision}"
+            }
+            return JsonResponse(response_data, status=404)
+
+        regimen = archivo_facturacion.Regimen
+        if regimen == 'C':
+            carpeta_tipo_archivo = 'CONTRIBUTIVO'
+        elif regimen == 'S':
+            carpeta_tipo_archivo = 'SUBSIDIADO'
+        else:
+            response_data = {
+                "success": False,
+                "detail": f"Régimen desconocido: {regimen}"
+            }
+            return JsonResponse(response_data, status=400)
+
+        # Crear la ruta base para las carpetas utilizando el nombre del usuario
+        fecha_actual = datetime.now().strftime('%Y%m%d')
+        carpeta_usuario = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COMPENSAR', fecha_actual, carpeta_tipo_archivo, nombre_usuario)
+        if not os.path.exists(carpeta_usuario):
+            try:
+                os.makedirs(carpeta_usuario)
+                print(f"Carpeta creada exitosamente: {carpeta_usuario}")
+            except Exception as e:
+                response_data = {
+                    "success": False,
+                    "detail": f"Error al crear la carpeta para el usuario: {str(e)}"
+                }
+                return JsonResponse(response_data, status=500)
 
         # Obtener archivos de la admisión
         archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
@@ -887,25 +925,16 @@ def radicar_compensar_view(request, numero_admision):
                 archivos_fallidos.append(ruta_origen)
                 continue
 
-            # Formar la carpeta de destino con la fecha actual
-            fecha_actual = datetime.now().strftime('%Y%m%d')
-            if t_regimen == 1 or t_regimen == 0:
-                carpeta_tipo_archivo = 'CONTRIBUTIVO'
-            elif t_regimen == 2:
-                carpeta_tipo_archivo = 'SUBSIDIADO'
-            else:
-                carpeta_tipo_archivo = tipo_archivo
-
+            # Formar la ruta de destino
             nombre_archivo = f"{tipo_archivo}{factura_numero}.pdf"
-
-            carpeta_fecha = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COMPENSAR', fecha_actual)
-            carpeta_path = os.path.join(carpeta_fecha, carpeta_tipo_archivo)
-            if not os.path.exists(carpeta_path):
-                os.makedirs(carpeta_path)
-            ruta_destino = os.path.join(carpeta_path, nombre_archivo)
-            shutil.copy(ruta_origen, ruta_destino)
-            archivos_copiados.append(ruta_destino)
-            print(f"Archivo {tipo_archivo} copiado exitosamente a {ruta_destino}.")
+            ruta_destino = os.path.join(carpeta_usuario, nombre_archivo)
+            try:
+                shutil.copy(ruta_origen, ruta_destino)
+                archivos_copiados.append(ruta_destino)
+                print(f"Archivo {tipo_archivo} copiado exitosamente a {ruta_destino}.")
+            except Exception as e:
+                archivos_fallidos.append(ruta_destino)
+                print(f"Error al copiar archivo {tipo_archivo} a {ruta_destino}: {str(e)}")
 
         # Actualizar el campo Radicado en la tabla archivos
         actualizados = archivos_a_verificar.update(Radicado=True)
@@ -931,8 +960,7 @@ def radicar_compensar_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
-
-######## TABLA RADICACION##############
+######## TABLA RADICACION######
 class TablaRadicacion(APIView):
     def get(self, request):
         # Obtener parámetros de consulta
@@ -944,11 +972,17 @@ class TablaRadicacion(APIView):
         try:
             fecha_inicio_dt = datetime.strptime(fecha_inicio, '%Y-%m-%d') if fecha_inicio else None
             fecha_fin_dt = datetime.strptime(fecha_fin, '%Y-%m-%d') if fecha_fin else None
+
+            # Convertir fechas naive a fechas con zona horaria
+            if fecha_inicio_dt:
+                fecha_inicio_dt = make_aware(fecha_inicio_dt)
+            if fecha_fin_dt:
+                fecha_fin_dt = make_aware(fecha_fin_dt)
         except ValueError:
             return Response({'error': 'Formato de fecha incorrecto. Use YYYY-MM-DD.'}, status=400)
 
-        # Filtrar auditorías con revisiones necesarias
-        auditorias = AuditoriaCuentasMedicas.objects.filter(RevisionCuentasMedicas=True, RevisionTesoreria=True)
+        # Filtrar auditorías con RevisionCuentasMedicas=True
+        auditorias = AuditoriaCuentasMedicas.objects.filter(RevisionCuentasMedicas=True)
 
         # Inicializar la lista de respuesta
         response_data = []
@@ -969,48 +1003,47 @@ class TablaRadicacion(APIView):
                 if admision_data:
                     # Verificar el filtro de CodigoEntidad
                     if not codigo_entidad or codigo_entidad == admision_data[2]:
-                        # Obtener archivos asociados a la admisión
-                        archivos = ArchivoFacturacion.objects.filter(Admision_id=auditoria.AdmisionId)
-                        
+                        # Obtener archivos de tipo "RESULTADO" o "HCNEURO" asociados a la admisión
+                        archivos_resultado = ArchivoFacturacion.objects.filter(
+                            Admision_id=auditoria.AdmisionId,
+                            Tipo__in=['RESULTADO', 'HCNEURO', 'FACTURA']  # Filtrar archivos de tipo "RESULTADO" o "HCNEURO"
+                        )
+
                         # Filtrar archivos por rango de fechas si están presentes
                         if fecha_inicio_dt and fecha_fin_dt:
-                            archivos = archivos.filter(
-                                Q(FechaCreacionAntares__gte=fecha_inicio_dt) & Q(FechaCreacionAntares__lte=fecha_fin_dt)
+                            archivos_resultado = archivos_resultado.filter(
+                                FechaCreacionAntares__range=(fecha_inicio_dt, fecha_fin_dt)
                             )
 
                         # Si existen archivos después del filtro
-                        if archivos.exists():
-                            # Tomar solo los archivos que cumplan estrictamente con el rango de fechas
-                            for archivo in archivos:
-                                if fecha_inicio_dt <= archivo.FechaCreacionAntares <= fecha_fin_dt:
-                                    # Crear la respuesta con todos los campos requeridos
-                                    data = {
-                                        'AdmisionId': auditoria.AdmisionId,
-                                        'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
-                                        'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
-                                        'Observacion': auditoria.Observacion,
-                                        'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
-                                        'RevisionTesoreria': auditoria.RevisionTesoreria,
-                                        'Consecutivo': admision_data[0],
-                                        'IdPaciente': admision_data[1],
-                                        'CodigoEntidad': admision_data[2],
-                                        'NombreResponsable': admision_data[3],
-                                        'CedulaResponsable': admision_data[4] if len(admision_data) > 4 else None,
-                                        'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
-                                        'FechaCreacionAntares': archivo.FechaCreacionAntares.strftime('%Y-%m-%d') if archivo.FechaCreacionAntares else None,
-                                        'Radicado': archivo.Radicado
-                                    }
-                                    response_data.append(data)
-                                    break  # No necesitamos buscar más archivos para esta admisión si uno cumple con el criterio
+                        if archivos_resultado.exists():
+                            # Crear la respuesta con todos los campos requeridos
+                            for archivo in archivos_resultado:
+                                data = {
+                                    'AdmisionId': auditoria.AdmisionId,
+                                    'FechaCreacion': auditoria.FechaCreacion.strftime('%Y-%m-%d'),
+                                    'FechaCargueArchivo': auditoria.FechaCargueArchivo.strftime('%Y-%m-%d'),
+                                    'Observacion': auditoria.Observacion,
+                                    'RevisionCuentasMedicas': auditoria.RevisionCuentasMedicas,
+                                    'Consecutivo': admision_data[0],
+                                    'IdPaciente': admision_data[1],
+                                    'CodigoEntidad': admision_data[2],
+                                    'NombreResponsable': admision_data[3],
+                                    'CedulaResponsable': admision_data[4] if len(admision_data) > 4 else None,
+                                    'FacturaNo': admision_data[5] if len(admision_data) > 5 else None,
+                                    'FechaCreacionAntares': archivo.FechaCreacionAntares.strftime('%Y-%m-%d') if archivo.FechaCreacionAntares else None,
+                                    'Radicado': archivo.Radicado
+                                }
+                                response_data.append(data)
+                                break  # No necesitamos buscar más archivos para esta admisión si uno cumple con el criterio
 
         # Devolver los datos de respuesta
         return Response(response_data)
 
-
-
-
 ####### SALUD TOTAL ###
-def radicar_salud_total_view(request, numero_admision):
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_salud_total_view(request, numero_admision, idusuario):
     try:
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
@@ -1022,59 +1055,74 @@ def radicar_salud_total_view(request, numero_admision):
             return JsonResponse(response_data, status=400)
 
         # Obtener los datos de admisión
-        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code == 200:
             if hasattr(admision_response, 'data') and isinstance(admision_response.data, dict):
                 admision_data = admision_response.data.get('data')
                 if isinstance(admision_data, dict):
                     factura_numero = admision_data.get('FacturaNo')
-                    prefijo = admision_data.get('Prefijo')
+                    prefijo = admision_data.get('Prefijo') or ''  # Usa un valor predeterminado si es None
+
+                    # Asegúrate de que prefijo sea una cadena válida
+                    if prefijo is None:
+                        prefijo = ''  # O asigna un valor por defecto si es necesario
 
                     if factura_numero is not None:
                         # Obtener los archivos de la admisión
-                        archivos_response = archivos_por_admision_radicacion(request, numero_admision)
+                        archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
                         if archivos_response.status_code == 200:
                             if hasattr(archivos_response, 'data') and isinstance(archivos_response.data, dict):
                                 archivos_data = archivos_response.data.get('data', [])
                                 if isinstance(archivos_data, list):
-                                    # Obtener el regimen de la admisión desde el primer archivo asociado
-                                    archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
-                                    if not archivo_facturacion:
-                                        raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
-
-                                    regimen = archivo_facturacion.Regimen
-                                    if regimen == 'C':
-                                        carpeta_tipo_archivo = 'CONTRIBUTIVO'
-                                    elif regimen == 'S':
-                                        carpeta_tipo_archivo = 'SUBSIDIADO'
-                                    else:
-                                        raise ValueError(f"Regimen desconocido: {regimen}")
+                                    # Verificar si el usuario existe y obtener el nombre
+                                    try:
+                                        user = CustomUser.objects.get(id=idusuario)
+                                        nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+                                        # Sanitizar el nombre del usuario si es necesario
+                                        nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+                                        print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+                                    except CustomUser.DoesNotExist:
+                                        response_data = {
+                                            "success": False,
+                                            "detail": "Usuario no encontrado."
+                                        }
+                                        return JsonResponse(response_data, status=404)
 
                                     # Obtener la fecha de hoy para la carpeta
                                     fecha_hoy = datetime.now().strftime('%Y-%m-%d')
 
-                                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SALUDTOTAL', fecha_hoy, carpeta_tipo_archivo)
+                                    # Crear la ruta completa usando el nombre de usuario
+                                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SALUDTOTAL', fecha_hoy, nombre_usuario)
                                     if not os.path.exists(carpeta_path):
                                         os.makedirs(carpeta_path)
 
+                                    # Definir los tipos de archivos requeridos
+                                    documentos_requeridos = {
+                                        'FACTURA': 1,
+                                        'AUTORIZACION': 17,
+                                        'ORDEN': 5,
+                                        'RESULTADO': 7,
+                                        'COMPROBANTE': 15
+                                    }
+
+                                    # Verificar la presencia de todos los documentos requeridos
+                                    tipos_archivos_presentes = {archivo.get('Tipo') for archivo in archivos_data}
+                                    documentos_faltantes = [tipo for tipo in documentos_requeridos if tipo not in tipos_archivos_presentes]
+
+                                    if documentos_faltantes:
+                                        response_data = {
+                                            "success": False,
+                                            "detail": f"Faltan los siguientes documentos requeridos: {', '.join(documentos_faltantes)}"
+                                        }
+                                        return JsonResponse(response_data, status=400)
+
+                                    # Procesar y copiar los archivos requeridos
                                     for archivo in archivos_data:
                                         tipo_archivo = archivo.get('Tipo')
-                                        ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
+                                        if tipo_archivo in documentos_requeridos:
+                                            ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
+                                            numero_tipo_documento = documentos_requeridos[tipo_archivo]
 
-                                        if tipo_archivo == 'FACTURA':
-                                            numero_tipo_documento = 1
-                                        elif tipo_archivo == 'AUTORIZACION':
-                                            numero_tipo_documento = 17
-                                        elif tipo_archivo == 'ORDEN':
-                                            numero_tipo_documento = 5
-                                        elif tipo_archivo == 'RESULTADO':
-                                            numero_tipo_documento = 7
-                                        elif tipo_archivo == 'COMPROBANTE':
-                                            numero_tipo_documento = 15
-                                        else:
-                                            numero_tipo_documento = 0  
-
-                                        if numero_tipo_documento != 0:
                                             nombre_archivo = f"901119103_{prefijo}_{factura_numero}_{numero_tipo_documento}_1.pdf"
                                             print("Nombre de archivo:", nombre_archivo)
 
@@ -1082,13 +1130,11 @@ def radicar_salud_total_view(request, numero_admision):
                                             ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative.replace(settings.MEDIA_URL, "").lstrip('/')))
 
                                             if os.path.exists(ruta_origen):
-                                                ruta_destino = os.path.join(carpeta_path, nombre_archivo) 
-                                                shutil.copy(ruta_origen, ruta_destino)  
-                                                print("Archivo copiado exitosamente.")  
+                                                ruta_destino = os.path.join(carpeta_path, nombre_archivo)
+                                                shutil.copy(ruta_origen, ruta_destino)
+                                                print("Archivo copiado exitosamente.")
                                             else:
                                                 raise FileNotFoundError(f"La ruta de origen '{ruta_origen}' no es válida")
-                                        else:
-                                            raise ValueError(f"No se pudo determinar el número para el tipo de documento {tipo_archivo}")
 
                                     # Verificar registros antes de la actualización
                                     print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
@@ -1116,7 +1162,7 @@ def radicar_salud_total_view(request, numero_admision):
                         else:
                             return archivos_response
                     else:
-                        raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+                        raise ValueError("La admisión no tiene el número de factura.")
                 else:
                     raise ValueError("Los datos de admisión no están en el formato esperado.")
             else:
@@ -1137,10 +1183,28 @@ def radicar_salud_total_view(request, numero_admision):
         return JsonResponse(response_data, status=500)
 
 
+
+
+
 #### SANITAS EVENTO
 @api_view(['GET'])
-def radicar_sanitas_evento_view(request, numero_admision):
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_sanitas_evento_view(request, numero_admision, idusuario):
     try:
+        # Verificar si el usuario existe y obtener el nombre de usuario
+        try:
+            user = CustomUser.objects.get(id=idusuario)
+            nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+            # Sanitizar el nombre del usuario si es necesario
+            nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+            print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+        except CustomUser.DoesNotExist:
+            response_data = {
+                "success": False,
+                "detail": "Usuario no encontrado."
+            }
+            return JsonResponse(response_data, status=404)
+
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
         if archivos_a_verificar.exists() and archivos_a_verificar.filter(Radicado=True).exists():
@@ -1151,13 +1215,13 @@ def radicar_sanitas_evento_view(request, numero_admision):
             return JsonResponse(response_data, status=400)
 
         # Obtener los datos de admisión
-        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code != 200:
             return admision_response
 
         admision_data = admision_response.data.get('data')
         factura_numero = admision_data.get('FacturaNo')
-        prefijo = admision_data.get('Prefijo')
+        prefijo = admision_data.get('Prefijo') or ''  # Usa un valor predeterminado si es None
 
         if factura_numero is None:
             raise ValueError("La admisión no tiene el número de factura")
@@ -1191,6 +1255,7 @@ def radicar_sanitas_evento_view(request, numero_admision):
             }
             return JsonResponse(response_data, status=400)
 
+        # Obtener el archivo de tipo FACTURA
         factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
         if not factura_archivo:
             raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
@@ -1202,6 +1267,7 @@ def radicar_sanitas_evento_view(request, numero_admision):
         if not os.path.exists(ruta_origen):
             raise FileNotFoundError(f"No se encontró el archivo de tipo FACTURA en {ruta_origen}")
 
+        # Crear un nuevo documento PDF combinando los archivos
         merger = PdfMerger()
         merger.append(ruta_origen)
 
@@ -1218,6 +1284,7 @@ def radicar_sanitas_evento_view(request, numero_admision):
                 else:
                     raise FileNotFoundError(f"No se encontró el archivo {archivo.get('Tipo')} en {ruta_origen}")
 
+        # Obtener el régimen desde el primer archivo de facturación relacionado
         archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
         if not archivo_facturacion:
             raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
@@ -1230,9 +1297,10 @@ def radicar_sanitas_evento_view(request, numero_admision):
         else:
             raise ValueError(f"Regimen desconocido: {regimen}")
 
+        # Crear la ruta de la carpeta usando la fecha, el régimen y el nombre del usuario
         fecha_hoy = datetime.now().strftime('%Y-%m-%d')
         carpeta_prefijo_numero_factura = f"{prefijo}{factura_numero}"
-        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SAN01', carpeta_tipo_archivo, fecha_hoy, carpeta_prefijo_numero_factura)
+        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SAN01', carpeta_tipo_archivo, fecha_hoy,  nombre_usuario, carpeta_prefijo_numero_factura)
         if not os.path.exists(carpeta_nombre_archivo):
             os.makedirs(carpeta_nombre_archivo)
 
@@ -1271,7 +1339,9 @@ def radicar_sanitas_evento_view(request, numero_admision):
         }
         return JsonResponse(response_data, status=500)
 ##### COLSANITAS###
-def radicar_colsanitas_view(request, numero_admision):
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_colsanitas_view(request, numero_admision, idusuario):
     try:
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
@@ -1283,99 +1353,130 @@ def radicar_colsanitas_view(request, numero_admision):
             return JsonResponse(response_data, status=400)
 
         # Obtener los datos de admisión
-        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code == 200:
-            admision_data = admision_response.data.get('data')
-            factura_numero = admision_data.get('FacturaNo')
-            prefijo = admision_data.get('Prefijo')
+            if hasattr(admision_response, 'data') and isinstance(admision_response.data, dict):
+                admision_data = admision_response.data.get('data')
+                if isinstance(admision_data, dict):
+                    factura_numero = admision_data.get('FacturaNo')
+                    prefijo = admision_data.get('Prefijo') or ''  # Usa un valor predeterminado si es None
 
-            if factura_numero is not None:
-                # Obtener los archivos de la admisión
-                archivos_response = archivos_por_admision_radicacion(request, numero_admision)
-                if archivos_response.status_code == 200:
-                    archivos_data = archivos_response.data.get('data', [])
+                    if factura_numero is not None:
+                        # Obtener los archivos de la admisión
+                        archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
+                        if archivos_response.status_code == 200:
+                            if hasattr(archivos_response, 'data') and isinstance(archivos_response.data, dict):
+                                archivos_data = archivos_response.data.get('data', [])
+                                if isinstance(archivos_data, list):
+                                    # Verificar si el usuario existe y obtener el nombre
+                                    try:
+                                        user = CustomUser.objects.get(id=idusuario)
+                                        nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+                                        # Sanitizar el nombre del usuario si es necesario
+                                        nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+                                        print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+                                    except CustomUser.DoesNotExist:
+                                        response_data = {
+                                            "success": False,
+                                            "detail": "Usuario no encontrado."
+                                        }
+                                        return JsonResponse(response_data, status=404)
 
-                    # Obtener el regimen de la admisión desde el primer archivo asociado
-                    archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
-                    if not archivo_facturacion:
-                        raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
+                                    # Obtener la fecha de hoy para la carpeta
+                                    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
 
-                    regimen = archivo_facturacion.Regimen
-                    if regimen == 'C':
-                        carpeta_tipo_archivo = 'CONTRIBUTIVO'
-                    elif regimen == 'S':
-                        carpeta_tipo_archivo = 'SUBSIDIADO'
-                    else:
-                        raise ValueError(f"Regimen desconocido: {regimen}")
+                                    # Crear la ruta completa usando el nombre de usuario
+                                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COLSANITAS', fecha_hoy, nombre_usuario)
+                                    if not os.path.exists(carpeta_path):
+                                        os.makedirs(carpeta_path)
 
-                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'COLSANITAS', carpeta_tipo_archivo)
-                    if not os.path.exists(carpeta_path):
-                        os.makedirs(carpeta_path)
+                                    # Definir los tipos de archivos requeridos
+                                    documentos_requeridos = {'FACTURA', 'RESULTADO', 'COMPROBANTE', 'ORDEN'}
+                                    
+                                    # Verificar la presencia de todos los documentos requeridos
+                                    tipos_archivos_presentes = {archivo.get('Tipo') for archivo in archivos_data}
+                                    documentos_faltantes = documentos_requeridos - tipos_archivos_presentes
 
-                    for archivo in archivos_data:
-                        tipo_archivo = archivo.get('Tipo')
-                        ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
-                        ruta_origen_relative = ruta_origen_relative.replace(settings.MEDIA_URL, "").lstrip('/')
-                        ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative))
+                                    if documentos_faltantes:
+                                        response_data = {
+                                            "success": False,
+                                            "detail": f"Faltan los siguientes documentos requeridos: {', '.join(documentos_faltantes)}"
+                                        }
+                                        return JsonResponse(response_data, status=400)
 
-                        if tipo_archivo == 'FACTURA':
-                            nombre_archivo = f"{prefijo}{factura_numero}.pdf"
-                        else:
-                            if tipo_archivo == 'COMPROBANTE':
-                                sop = 'SOP_1'
-                            elif tipo_archivo == 'AUTORIZACION':
-                                sop = 'SOP_2'
-                            elif tipo_archivo == 'ORDEN':
-                                sop = 'SOP_3'
-                            elif tipo_archivo == 'ADICIONALES':
-                                sop = 'SOP_4'
-                            elif tipo_archivo == 'RESULTADO':
-                                sop = 'SOP_5'
-                            elif tipo_archivo == 'HCNEURO':
-                                sop = 'SOP_6'
+                                    # Procesar y copiar los archivos según el tipo
+                                    for archivo in archivos_data:
+                                        tipo_archivo = archivo.get('Tipo')
+                                        ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
+                                        ruta_origen_relative = ruta_origen_relative.replace(settings.MEDIA_URL, "").lstrip('/')
+                                        ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative))
+
+                                        if tipo_archivo == 'FACTURA':
+                                            nombre_archivo = f"{prefijo}{factura_numero}.pdf"
+                                        else:
+                                            if tipo_archivo == 'COMPROBANTE':
+                                                sop = 'SOP_1'
+                                            elif tipo_archivo == 'AUTORIZACION':
+                                                sop = 'SOP_2'
+                                            elif tipo_archivo == 'ORDEN':
+                                                sop = 'SOP_3'
+                                            elif tipo_archivo == 'ADICIONALES':
+                                                sop = 'SOP_4'
+                                            elif tipo_archivo == 'RESULTADO':
+                                                sop = 'SOP_5'
+                                            elif tipo_archivo == 'HCNEURO':
+                                                sop = 'SOP_6'
+                                            else:
+                                                sop = 'OTRO'  # Otra opción si no se encuentra el tipo de documento
+
+                                            nombre_archivo = f"{prefijo}{factura_numero}_{sop}.pdf"
+
+                                        print("Nombre de archivo:", nombre_archivo)
+
+                                        # Verificar y ajustar la ruta si contiene duplicaciones de 'media'
+                                        if 'media/media' in ruta_origen:
+                                            ruta_origen = ruta_origen.replace('media/media', 'media')
+
+                                        print(f'Ruta formada para {tipo_archivo}: {ruta_origen}')
+
+                                        if os.path.exists(ruta_origen):
+                                            ruta_destino = os.path.join(carpeta_path, nombre_archivo)
+                                            shutil.copy(ruta_origen, ruta_destino)
+                                            print("Archivo copiado exitosamente.")
+                                        else:
+                                            raise FileNotFoundError(f"La ruta de origen '{ruta_origen}' no es válida")
+
+                                    # Verificar registros antes de la actualización
+                                    print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
+                                    for archivo in archivos_a_verificar:
+                                        print(f"Antes de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
+
+                                    # Actualizar el campo Radicado en la tabla archivos
+                                    actualizados = archivos_a_verificar.update(Radicado=True)
+                                    print(f"Registros actualizados a Radicado=True: {actualizados}")
+
+                                    # Verificar registros después de la actualización
+                                    archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=numero_admision, Radicado=True)
+                                    for archivo in archivos_actualizados:
+                                        print(f"Después de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
+
+                                    response_data = {
+                                        "success": True,
+                                        "detail": f"Archivos copiados y carpetas creadas para la admisión con número {numero_admision}"
+                                    }
+                                    return JsonResponse(response_data, status=200)
+                                else:
+                                    raise ValueError("La respuesta de archivos no contiene una lista de datos válida.")
                             else:
-                                sop = 'OTRO'  # Otra opción si no se encuentra el tipo de documento
-
-                            nombre_archivo = f"{prefijo}{factura_numero}_{sop}.pdf"
-
-                        print("Nombre de archivo:", nombre_archivo)
-
-                        # Verificar y ajustar la ruta si contiene duplicaciones de 'media'
-                        if 'media/media' in ruta_origen:
-                            ruta_origen = ruta_origen.replace('media/media', 'media')
-
-                        print(f'Ruta formada para {tipo_archivo}: {ruta_origen}')
-
-                        if os.path.exists(ruta_origen):
-                            ruta_destino = os.path.join(carpeta_path, nombre_archivo)
-                            shutil.copy(ruta_origen, ruta_destino)
-                            print("Archivo copiado exitosamente.")
+                                raise ValueError("La respuesta de archivos no contiene datos válidos.")
                         else:
-                            raise FileNotFoundError(f"La ruta de origen '{ruta_origen}' no es válida")
-
-                    # Verificar registros antes de la actualización
-                    print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
-                    for archivo in archivos_a_verificar:
-                        print(f"Antes de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
-
-                    # Actualizar el campo Radicado en la tabla archivos
-                    actualizados = archivos_a_verificar.update(Radicado=True)
-                    print(f"Registros actualizados a Radicado=True: {actualizados}")
-
-                    # Verificar registros después de la actualización
-                    archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=numero_admision, Radicado=True)
-                    for archivo in archivos_actualizados:
-                        print(f"Después de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
-
-                    response_data = {
-                        "success": True,
-                        "detail": f"Archivos copiados y carpetas creadas para la admisión con número {numero_admision}"
-                    }
-                    return JsonResponse(response_data, status=200)
+                            return archivos_response
+                    else:
+                        raise ValueError("La admisión no tiene el número de factura.")
                 else:
-                    return archivos_response
+                    raise ValueError("Los datos de admisión no están en el formato esperado.")
             else:
-                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+                raise ValueError("La respuesta de admisión no contiene datos válidos.")
         else:
             return admision_response
     except ArchivoFacturacion.DoesNotExist:
@@ -1390,10 +1491,13 @@ def radicar_colsanitas_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
+
       
       
 ##### MEDISANITAS###
-def radicar_mes01_view(request, numero_admision):
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_mes01_view(request, numero_admision, idusuario):
     try:
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
@@ -1405,35 +1509,55 @@ def radicar_mes01_view(request, numero_admision):
             return JsonResponse(response_data, status=400)
 
         # Obtener los datos de admisión
-        admision_response = GeDocumentalView().get(request=None, consecutivo=numero_admision)
+        admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code == 200:
             admision_data = admision_response.data.get('data')
             factura_numero = admision_data.get('FacturaNo')
-            prefijo = admision_data.get('Prefijo')
+            prefijo = admision_data.get('Prefijo') or ''  # Usa un valor predeterminado si es None
 
             if factura_numero is not None:
                 # Obtener los archivos de la admisión
-                archivos_response = archivos_por_admision_radicacion(request, numero_admision)
+                archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
                 if archivos_response.status_code == 200:
                     archivos_data = archivos_response.data.get('data', [])
 
-                    # Obtener el regimen de la admisión desde el primer archivo asociado
-                    archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
-                    if not archivo_facturacion:
-                        raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
+                    # Verificar si el usuario existe y obtener el nombre
+                    try:
+                        user = CustomUser.objects.get(id=idusuario)
+                        nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+                        # Sanitizar el nombre del usuario si es necesario
+                        nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+                        print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+                    except CustomUser.DoesNotExist:
+                        response_data = {
+                            "success": False,
+                            "detail": "Usuario no encontrado."
+                        }
+                        return JsonResponse(response_data, status=404)
 
-                    regimen = archivo_facturacion.Regimen
-                    if regimen == 'C':
-                        carpeta_tipo_archivo = 'CONTRIBUTIVO'
-                    elif regimen == 'S':
-                        carpeta_tipo_archivo = 'SUBSIDIADO'
-                    else:
-                        raise ValueError(f"Regimen desconocido: {regimen}")
+                    # Obtener la fecha de hoy para la carpeta
+                    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
 
-                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'MEDISANITAS', carpeta_tipo_archivo)
+                    # Crear la ruta completa usando el nombre de usuario
+                    carpeta_path = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'MEDISANITAS', fecha_hoy, nombre_usuario)
                     if not os.path.exists(carpeta_path):
                         os.makedirs(carpeta_path)
 
+                    # Definir los tipos de archivos requeridos
+                    documentos_requeridos = {'FACTURA', 'RESULTADO', 'AUTORIZACION', 'COMPROBANTE', 'ORDEN'}
+                    
+                    # Verificar la presencia de todos los documentos requeridos
+                    tipos_archivos_presentes = {archivo.get('Tipo') for archivo in archivos_data}
+                    documentos_faltantes = documentos_requeridos - tipos_archivos_presentes
+
+                    if documentos_faltantes:
+                        response_data = {
+                            "success": False,
+                            "detail": f"Faltan los siguientes documentos requeridos: {', '.join(documentos_faltantes)}"
+                        }
+                        return JsonResponse(response_data, status=400)
+
+                    # Procesar y copiar los archivos según el tipo
                     for archivo in archivos_data:
                         tipo_archivo = archivo.get('Tipo')
                         ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
@@ -1497,7 +1621,7 @@ def radicar_mes01_view(request, numero_admision):
                 else:
                     return archivos_response
             else:
-                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+                raise ValueError("La admisión no tiene el número de factura.")
         else:
             return admision_response
     except ArchivoFacturacion.DoesNotExist:
@@ -1512,21 +1636,14 @@ def radicar_mes01_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
-      
-      
-      
-      
-      
-      
-      
-      
+
       
       
     
 #### CAPITAL SALUD ###############################################################################################
-
 @api_view(['GET'])
-def radicar_capitalsalud_view(request, numero_admision):
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_capitalsalud_view(request, numero_admision, idusuario):
     try:
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
@@ -1549,82 +1666,99 @@ def radicar_capitalsalud_view(request, numero_admision):
                 archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
                 if archivos_response.status_code == 200:
                     archivos_data = archivos_response.data.get('data', [])
-                    factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
 
-                    if factura_archivo:
-                        ruta_origen_relative = unquote(factura_archivo.get('RutaArchivo'))
-                        ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative.replace(settings.MEDIA_URL, "")))
-                        print(f"Ruta del archivo de factura: {ruta_origen}")
+                    # Definir los tipos de archivos requeridos
+                    documentos_requeridos = {'FACTURA', 'COMPROBANTE', 'AUTORIZACION', 'ORDEN', 'RESULTADO', 'HCNEURO'}
+                    
+                    # Verificar la presencia de los documentos clave
+                    tipos_archivos_presentes = {archivo.get('Tipo') for archivo in archivos_data}
+                    documentos_clave = {'FACTURA', 'RESULTADO'}
+                    documentos_faltantes = documentos_clave - tipos_archivos_presentes
 
-                        if not os.path.exists(ruta_origen):
-                            raise FileNotFoundError(f"No se encontró el archivo de tipo FACTURA en {ruta_origen}")
+                    # Si falta resultado pero existe HCNEURO, considerarlo como válido
+                    if 'RESULTADO' in documentos_faltantes and 'HCNEURO' in tipos_archivos_presentes:
+                        documentos_faltantes.remove('RESULTADO')  # Consideramos HCNEURO en lugar de RESULTADO
 
-                        # Crear un nuevo documento PDF
-                        merger = PdfMerger()
-                        merger.append(ruta_origen)
-
-                        # Agregar los demás archivos al nuevo documento
-                        tipos_requeridos = ['COMPROBANTE', 'ORDEN', 'HCNEURO', 'AUTORIZACION', 'ADICIONALES', 'RESULTADO']
-                        for tipo in tipos_requeridos:
-                            for archivo in archivos_data:
-                                if archivo.get('Tipo') == tipo:
-                                    ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
-                                    ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative.replace(settings.MEDIA_URL, "")))
-                                    print(f"Ruta del archivo {archivo.get('Tipo')}: {ruta_origen}")
-
-                                    if os.path.exists(ruta_origen):
-                                        merger.append(ruta_origen)
-                                    else:
-                                        print(f"No se encontró el archivo {archivo.get('Tipo')} en {ruta_origen}")
-
-                        # Obtener el regimen de la admisión desde el primer archivo asociado
-                        archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
-                        if not archivo_facturacion:
-                            raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
-
-                        regimen = archivo_facturacion.Regimen
-                        if regimen == 'C':
-                            carpeta_tipo_archivo = 'CONTRIBUTIVO'
-                        elif regimen == 'S':
-                            carpeta_tipo_archivo = 'SUBSIDIADO'
-                        else:
-                            raise ValueError(f"Regimen desconocido: {regimen}")
-
-                        # Crear la ruta completa del archivo destino
-                        fecha_hoy = datetime.now().strftime('%Y-%m-%d')
-                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'CAPITALSALUD', carpeta_tipo_archivo, fecha_hoy)
-                        if not os.path.exists(carpeta_nombre_archivo):
-                            os.makedirs(carpeta_nombre_archivo)
-
-                        ruta_destino_merged = os.path.join(carpeta_nombre_archivo, f"{prefijo}{factura_numero}.pdf")
-                        merger.write(ruta_destino_merged)
-                        merger.close()
-
-                        # Verificar registros antes de la actualización
-                        print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
-                        for archivo in archivos_a_verificar:
-                            print(f"Antes de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
-
-                        # Actualizar el campo Radicado en la tabla archivos
-                        actualizados = archivos_a_verificar.update(Radicado=True)
-                        print(f"Registros actualizados a Radicado=True: {actualizados}")
-
-                        # Verificar registros después de la actualización
-                        archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=numero_admision, Radicado=True)
-                        for archivo in archivos_actualizados:
-                            print(f"Después de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
-
+                    # Verificar si faltan documentos obligatorios
+                    if 'FACTURA' in documentos_faltantes:
                         response_data = {
-                            "success": True,
-                            "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
+                            "success": False,
+                            "detail": "Falta el documento de FACTURA."
                         }
-                        return JsonResponse(response_data, status=200)
+                        return JsonResponse(response_data, status=400)
+
+                    # Verificar si el usuario existe y obtener el nombre
+                    try:
+                        user = CustomUser.objects.get(id=idusuario)
+                        nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+                        # Sanitizar el nombre del usuario si es necesario
+                        nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+                        print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+                    except CustomUser.DoesNotExist:
+                        response_data = {
+                            "success": False,
+                            "detail": "Usuario no encontrado."
+                        }
+                        return JsonResponse(response_data, status=404)
+
+                    # Crear un nuevo documento PDF
+                    merger = PdfMerger()
+
+                    # Orden de los documentos: Factura, Comprobante, Autorización, Orden, Resultado (o HCNeuro)
+                    orden_documentos = ['FACTURA', 'COMPROBANTE', 'AUTORIZACION', 'ORDEN', 'ADICIONALES','RESULTADO', 'HCNEURO']
+
+                    # Procesar y agregar los archivos en el orden requerido
+                    for tipo_documento in orden_documentos:
+                        if tipo_documento in tipos_archivos_presentes:
+                            # Si no hay Resultado pero hay HCNEURO, se usa HCNEURO
+                            if tipo_documento == 'RESULTADO' and 'RESULTADO' not in tipos_archivos_presentes:
+                                continue  # Si no está RESULTADO, pero se agrega HCNEURO después
+                            
+                            # Obtener el archivo correspondiente al tipo de documento
+                            archivo = next(archivo for archivo in archivos_data if archivo.get('Tipo') == tipo_documento)
+                            ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
+                            ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative.replace(settings.MEDIA_URL, "")))
+
+                            if os.path.exists(ruta_origen):
+                                merger.append(ruta_origen)
+                            else:
+                                raise FileNotFoundError(f"No se encontró el archivo {tipo_documento} en {ruta_origen}")
+
+                    # Obtener el régimen de la admisión desde el primer archivo asociado
+                    archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
+                    if not archivo_facturacion:
+                        raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
+
+                    regimen = archivo_facturacion.Regimen
+                    if regimen == 'C':
+                        carpeta_tipo_archivo = 'CONTRIBUTIVO'
+                    elif regimen == 'S':
+                        carpeta_tipo_archivo = 'SUBSIDIADO'
                     else:
-                        raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
+                        raise ValueError(f"Regimen desconocido: {regimen}")
+
+                    # Crear la ruta completa del archivo destino usando el nombre del usuario
+                    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+                    carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'CAPITALSALUD', carpeta_tipo_archivo, fecha_hoy, nombre_usuario)
+                    if not os.path.exists(carpeta_nombre_archivo):
+                        os.makedirs(carpeta_nombre_archivo)
+
+                    ruta_destino_merged = os.path.join(carpeta_nombre_archivo, f"{prefijo}{factura_numero}.pdf")
+                    merger.write(ruta_destino_merged)
+                    merger.close()
+
+                    # Actualizar el campo Radicado en la tabla archivos
+                    actualizados = archivos_a_verificar.update(Radicado=True)
+
+                    response_data = {
+                        "success": True,
+                        "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
+                    }
+                    return JsonResponse(response_data, status=200)
                 else:
                     return archivos_response
             else:
-                raise ValueError("La admisión no tiene el número de factura o el tipo de régimen")
+                raise ValueError("La admisión no tiene el número de factura.")
         else:
             return admision_response
     except ArchivoFacturacion.DoesNotExist:
@@ -1639,10 +1773,25 @@ def radicar_capitalsalud_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
-  
+
+
 ###### RADICAR SAN02#####
-def radicar_san02_view(request, numero_admision):
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_san02_view(request, numero_admision, idusuario):
     try:
+        # Verificar si el idusuario existe en la base de datos y obtener el nombre de usuario
+        try:
+            user = CustomUser.objects.get(id=idusuario)
+            nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+        except CustomUser.DoesNotExist:
+            response_data = {
+                "success": False,
+                "detail": "Usuario no encontrado."
+            }
+            return JsonResponse(response_data, status=404)
+
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
         if archivos_a_verificar.exists() and archivos_a_verificar.filter(Radicado=True).exists():
@@ -1653,7 +1802,7 @@ def radicar_san02_view(request, numero_admision):
             return JsonResponse(response_data, status=400)
 
         # Obtener los datos de admisión
-        admision_response = GeDocumentalView().get(request, consecutivo=numero_admision)
+        admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code == 200:
             admision_data = admision_response.data.get('data')
             factura_numero = admision_data.get('FacturaNo')
@@ -1662,7 +1811,7 @@ def radicar_san02_view(request, numero_admision):
 
             if factura_numero is not None:
                 # Obtener los archivos de la admisión
-                archivos_response = archivos_por_admision_radicacion(request, numero_admision)
+                archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
                 if archivos_response.status_code == 200:
                     archivos_data = archivos_response.data.get('data', [])
                     factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
@@ -1673,7 +1822,11 @@ def radicar_san02_view(request, numero_admision):
                         print(f"Ruta del archivo de factura: {ruta_origen}")
 
                         if not os.path.exists(ruta_origen):
-                            raise FileNotFoundError(f"No se encontró el archivo de tipo FACTURA en {ruta_origen}")
+                            response_data = {
+                                "success": False,
+                                "detail": f"No se encontró el archivo de tipo FACTURA en {ruta_origen}"
+                            }
+                            return JsonResponse(response_data, status=404)
 
                         # Crear un nuevo documento PDF
                         merger = PdfMerger()
@@ -1696,19 +1849,27 @@ def radicar_san02_view(request, numero_admision):
                         # Obtener el régimen de la admisión desde el primer archivo asociado
                         archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
                         if not archivo_facturacion:
-                            raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
+                            response_data = {
+                                "success": False,
+                                "detail": f"No se encontró el archivo de facturación para la admisión {numero_admision}"
+                            }
+                            return JsonResponse(response_data, status=404)
 
                         regimen = archivo_facturacion.Regimen
                         if regimen == 'C':
-                            regimen_folder = 'CONTRIBUTIVO'
+                            carpeta_tipo_archivo = 'CONTRIBUTIVO'
                         elif regimen == 'S':
-                            regimen_folder = 'SUBSIDIADO'
+                            carpeta_tipo_archivo = 'SUBSIDIADO'
                         else:
-                            raise ValueError(f"Regimen desconocido: {regimen}")
+                            response_data = {
+                                "success": False,
+                                "detail": f"Régimen desconocido: {regimen}"
+                            }
+                            return JsonResponse(response_data, status=400)
 
                         # Crear la ruta completa del archivo destino
                         fecha_hoy = datetime.now().strftime('%Y-%m-%d')
-                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SAN02', regimen_folder, fecha_hoy)
+                        carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', 'SAN02', carpeta_tipo_archivo, nombre_usuario)
                         if not os.path.exists(carpeta_nombre_archivo):
                             os.makedirs(carpeta_nombre_archivo)
 
@@ -1736,11 +1897,19 @@ def radicar_san02_view(request, numero_admision):
                         }
                         return JsonResponse(response_data, status=200)
                     else:
-                        raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
+                        response_data = {
+                            "success": False,
+                            "detail": "No se encontró el archivo de tipo FACTURA para la admisión"
+                        }
+                        return JsonResponse(response_data, status=404)
                 else:
                     return archivos_response
             else:
-                raise ValueError("La admisión no tiene el número de factura")
+                response_data = {
+                    "success": False,
+                    "detail": "La admisión no tiene el número de factura o el tipo de régimen"
+                }
+                return JsonResponse(response_data, status=400)
         else:
             return admision_response
     except ArchivoFacturacion.DoesNotExist:
@@ -1755,8 +1924,6 @@ def radicar_san02_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
-
-
 ##### OTROS #############
 
 def limpiar_nombre_archivo(nombre):
@@ -1765,7 +1932,8 @@ def limpiar_nombre_archivo(nombre):
     return nombre
 
 @api_view(['GET'])
-def radicar_other_view(request, numero_admision):
+@permission_classes([AllowAny])  # Permitir acceso a cualquier usuario
+def radicar_other_view(request, numero_admision, idusuario):
     try:
         # Verificar si ya está radicado
         archivos_a_verificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
@@ -1776,114 +1944,124 @@ def radicar_other_view(request, numero_admision):
             }
             return JsonResponse(response_data, status=400)
 
+        # Obtener los datos de admisión
         admision_response = GeDocumentalView().get(request._request, consecutivo=numero_admision)
         if admision_response.status_code != 200:
             return admision_response
 
         admision_data = admision_response.data.get('data')
         factura_numero = admision_data.get('FacturaNo')
-        t_regimen = admision_data.get('tRegimen')
         prefijo = admision_data.get('Prefijo')
         codigo_entidad = admision_data.get('CodigoEntidad')
 
-        if factura_numero is not None and t_regimen is not None:
+        if factura_numero is not None:
+            # Obtener los archivos de la admisión
             archivos_response = archivos_por_admision_radicacion(request._request, numero_admision)
             if archivos_response.status_code != 200:
                 return archivos_response
 
             archivos_data = archivos_response.data.get('data', [])
-            factura_archivo = next((archivo for archivo in archivos_data if archivo.get('Tipo') == 'FACTURA'), None)
 
-            if factura_archivo:
-                ruta_origen_relative = factura_archivo.get('RutaArchivo')
-                ruta_origen_relative = limpiar_nombre_archivo(ruta_origen_relative)
+            # Validar la presencia de los archivos requeridos
+            documentos_requeridos = {'FACTURA', 'RESULTADO'}
+            tipos_archivos_presentes = {archivo.get('Tipo') for archivo in archivos_data}
+            documentos_faltantes = documentos_requeridos - tipos_archivos_presentes
+
+            if documentos_faltantes:
+                response_data = {
+                    "success": False,
+                    "detail": f"Faltan los siguientes documentos requeridos: {', '.join(documentos_faltantes)}"
+                }
+                return JsonResponse(response_data, status=400)
+
+            # Verificar si el usuario existe y obtener el nombre
+            try:
+                user = CustomUser.objects.get(id=idusuario)
+                nombre_usuario = user.username  # Obtener el nombre del usuario para usar en la carpeta
+                # Sanitizar el nombre del usuario si es necesario
+                nombre_usuario = "".join(c for c in nombre_usuario if c.isalnum() or c in (' ', '.', '_')).rstrip()
+                print(f"Nombre del usuario sanitizado para crear carpeta: {nombre_usuario}")
+            except CustomUser.DoesNotExist:
+                response_data = {
+                    "success": False,
+                    "detail": "Usuario no encontrado."
+                }
+                return JsonResponse(response_data, status=404)
+
+            # Procesar y combinar los archivos en un PDF
+            merger = PdfMerger()
+
+            for archivo in archivos_data:
+                tipo_archivo = archivo.get('Tipo')
+                ruta_origen_relative = unquote(archivo.get('RutaArchivo'))
                 ruta_origen_relative = ruta_origen_relative.replace(settings.MEDIA_URL, "").lstrip('/')
                 ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative))
 
-                print(f'Ruta formada para FACTURA: {ruta_origen}')
+                print(f'Ruta formada para {tipo_archivo}: {ruta_origen}')
 
-                if not os.path.exists(ruta_origen):
-                    raise FileNotFoundError(f"No se encontró el archivo de tipo FACTURA en {ruta_origen}")
-
-                merger = PdfMerger()
-                merger.append(ruta_origen)
-
-                for archivo in archivos_data:
-                    if archivo.get('Tipo') != 'FACTURA':
-                        ruta_origen_relative = archivo.get('RutaArchivo')
-                        ruta_origen_relative = limpiar_nombre_archivo(ruta_origen_relative)
-                        ruta_origen_relative = ruta_origen_relative.replace(settings.MEDIA_URL, "").lstrip('/')
-                        ruta_origen = os.path.normpath(os.path.join(settings.MEDIA_ROOT, ruta_origen_relative))
-
-                        print(f'Ruta formada para {archivo.get("Tipo")}: {ruta_origen}')
-
-                        if not os.path.exists(ruta_origen):
-                            print(f"Archivo no encontrado: {ruta_origen}")
-                            raise FileNotFoundError(f"No se encontró el archivo {archivo.get('Tipo')} en {ruta_origen}")
-                        else:
-                            merger.append(ruta_origen)
-
-                archivo_facturacion = ArchivoFacturacion.objects.filter(Admision_id=numero_admision).first()
-                if not archivo_facturacion:
-                    raise FileNotFoundError(f"No se encontró el archivo de facturación para la admisión {numero_admision}")
-
-                regimen = archivo_facturacion.Regimen
-                if regimen == 'C':
-                    carpeta_tipo_archivo = 'CONTRIBUTIVO'
-                elif regimen == 'S':
-                    carpeta_tipo_archivo = 'SUBSIDIADO'
+                if os.path.exists(ruta_origen):
+                    merger.append(ruta_origen)
                 else:
-                    raise ValueError(f"Regimen desconocido: {regimen}")
+                    raise FileNotFoundError(f"No se encontró el archivo {tipo_archivo} en {ruta_origen}")
 
-                carpetas_entidades = {
-                    "POL12": "POL12",
-                    "PML01": "PML01",
-                    "CAJACO": "CAJACO",
-                    "CAJASU": "CAJASU",
-                    "UNA01": "UNA01",
-                    "DM02": "DM02",
-                    "EQV01": "EQV01",
-                    "PAR01": "PAR01",
-                    "CHM05": "CHM05",
-                    "COL01": "COL01",
-                    "MES01": "MES01",
-                    "POL11": "POL11",
-                    "CHM02": "CHM02",
-                    "FOM01": "FOM01",
-                }
+            # Definir la carpeta de destino basada en el código de la entidad
+            carpetas_entidades = {
+                "POL12": "POL12",
+                "PML01": "PML01",
+                "CAJACO": "CAJACO",
+                "CAJASU": "CAJASU",
+                "UNA01": "UNA01",
+                "DM02": "DM02",
+                "EQV01": "EQV01",
+                "PAR01": "PAR01",
+                "CHM05": "CHM05",
+                "COL01": "COL01",
+                "MES01": "MES01",
+                "POL11": "POL11",
+                "CHM02": "CHM02",
+                "UNA02": "UNA02",
+                "MUL01": "MUL01",
+                "FOM01": "FOM01",
+                "IPSOL1": "IPSOL1",
+                "AIR01": "AIR01",
+                "AXA01": "AXA01",
+                "POL13": "POL13",
+                "BOL01": "BOL01",
+                    
+            }
+            entidad_carpeta = carpetas_entidades.get(codigo_entidad, "OTRO")
 
-                entidad_carpeta = carpetas_entidades.get(codigo_entidad, "OTRO")
+            # Crear la ruta completa del archivo destino usando el nombre del usuario
+            fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+            carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', entidad_carpeta, fecha_hoy, nombre_usuario)
+            if not os.path.exists(carpeta_nombre_archivo):
+                os.makedirs(carpeta_nombre_archivo)
 
-                fecha_hoy = datetime.now().strftime('%Y-%m-%d')
-                carpeta_prefijo_numero_factura = f"{prefijo}{factura_numero}"
-                carpeta_nombre_archivo = os.path.join(settings.MEDIA_ROOT, 'gdocumental', 'Radicacion', entidad_carpeta, carpeta_tipo_archivo, fecha_hoy, carpeta_prefijo_numero_factura)
-                if not os.path.exists(carpeta_nombre_archivo):
-                    os.makedirs(carpeta_nombre_archivo)
+            ruta_destino_merged = os.path.join(carpeta_nombre_archivo, f"{prefijo}{factura_numero}.pdf")
+            merger.write(ruta_destino_merged)
+            merger.close()
 
-                ruta_destino_merged = os.path.join(carpeta_nombre_archivo, f"{prefijo}{factura_numero}.pdf")
-                merger.write(ruta_destino_merged)
-                merger.close()
+            # Verificar registros antes de la actualización
+            print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
+            for archivo in archivos_a_verificar:
+                print(f"Antes de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
 
-                print(f"Registros encontrados para actualizar: {archivos_a_verificar.count()}")
-                for archivo in archivos_a_verificar:
-                    print(f"Antes de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
+            # Actualizar el campo Radicado en la tabla archivos
+            actualizados = archivos_a_verificar.update(Radicado=True)
+            print(f"Registros actualizados a Radicado=True: {actualizados}")
 
-                actualizados = archivos_a_verificar.update(Radicado=True)
-                print(f"Registros actualizados a Radicado=True: {actualizados}")
+            # Verificar registros después de la actualización
+            archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=numero_admision, Radicado=True)
+            for archivo in archivos_actualizados:
+                print(f"Después de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
 
-                archivos_actualizados = ArchivoFacturacion.objects.filter(Admision_id=numero_admision, Radicado=True)
-                for archivo in archivos_actualizados:
-                    print(f"Después de la actualización - IdArchivo: {archivo.IdArchivo}, Radicado: {archivo.Radicado}")
-
-                response_data = {
-                    "success": True,
-                    "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
-                }
-                return JsonResponse(response_data, status=200)
-            else:
-                raise FileNotFoundError("No se encontró el archivo de tipo FACTURA para la admisión")
+            response_data = {
+                "success": True,
+                "detail": f"Archivos combinados en un solo documento y guardados en {ruta_destino_merged}"
+            }
+            return JsonResponse(response_data, status=200)
         else:
-            return admision_response
+            raise ValueError("La admisión no tiene el número de factura.")
     except ArchivoFacturacion.DoesNotExist:
         response_data = {
             "success": False,
@@ -1896,6 +2074,7 @@ def radicar_other_view(request, numero_admision):
             "detail": str(e)
         }
         return JsonResponse(response_data, status=500)
+
 
 
 
@@ -2154,30 +2333,76 @@ class PunteoAntaresSubdireccion(APIView):
 ### FILTRO POR TIPO DE DOCUMENTO######
 class AdmisionesConTiposDeDocumento(APIView):
     def get(self, request, format=None):
-        fecha = request.GET.get('Fecha')
+        # Recuperar parámetros de la solicitud
+        fecha_inicio = request.GET.get('FechaInicio')
+        fecha_fin = request.GET.get('FechaFin')
         usuario_id = request.GET.get('UsuarioId')
 
-        if fecha and usuario_id:
+        # Verificar la existencia de los parámetros requeridos
+        if fecha_inicio and fecha_fin and usuario_id:
             try:
-                # Filtrar las admisiones por la fecha de FechaCreacionAntares y usuario, ordenar y agrupar por Admision_id
-                admisiones_queryset = (ArchivoFacturacion.objects
-                                       .filter(FechaCreacionAntares__date=fecha, 
-                                               Usuario_id=usuario_id)
-                                       .values('Admision_id')
-                                       .annotate(cantidad=Count('Admision_id'))
-                                       .order_by('Admision_id'))  # Ordenar por Admision_id
+                # Filtrar admisiones por el rango de fechas de FechaCreacionAntares y el usuario
+                admisiones_queryset = (
+                    ArchivoFacturacion.objects
+                    .filter(
+                        FechaCreacionAntares__date__range=[fecha_inicio, fecha_fin],
+                        Usuario_id=usuario_id
+                    )
+                    .values('Admision_id', 'FechaCreacionAntares')
+                    .annotate(cantidad=Count('Admision_id'))
+                    .order_by('Admision_id')
+                )
+
+                # Orden deseado para los tipos de documentos
+                tipos_documento_ordenados = [
+                    'FACTURA', 'COMPROBANTE', 'AUTORIZACION', 'ORDEN',
+                    'ADICIONALES', 'RESULTADO', 'HCNEURO', 'HCLINICA'
+                ]
 
                 admisiones_list = []
                 for admision in admisiones_queryset:
                     admision_id = admision['Admision_id']
-                    tipos_documento = (ArchivoFacturacion.objects
-                                       .filter(Admision_id=admision_id)
-                                       .values('Tipo'))
+                    fecha_creacion_antares = admision['FechaCreacionAntares']
+
+                    # Formatear FechaCreacionAntares a solo incluir año, mes, día
+                    fecha_creacion_antares_str = fecha_creacion_antares.strftime('%Y-%m-%d') if fecha_creacion_antares else None
+
+                    # Recuperar el 'CodigoEntidad' asociado con el 'Admision_id'
+                    codigo_entidad = None
+                    try:
+                        with connections['datosipsndx'].cursor() as cursor:
+                            query_entidad = 'SELECT CodigoEntidad FROM admisiones WHERE Consecutivo = %s'
+                            cursor.execute(query_entidad, [admision_id])
+                            entidad_info = cursor.fetchone()
+                            codigo_entidad = entidad_info[0] if entidad_info else None
+                    except Exception as e:
+                        # Registrar o manejar error si no se puede recuperar el CodigoEntidad
+                        pass
+
+                    # Obtener y verificar los tipos de documentos asociados a la admisión
+                    tipos_documento = (
+                        ArchivoFacturacion.objects
+                        .filter(Admision_id=admision_id)
+                        .values('Tipo')
+                    )
                     tipos_documento_list = [tipo['Tipo'] for tipo in tipos_documento]
+
+                    # Inicializar un diccionario con valores en blanco para cada tipo esperado
+                    tipos_documento_dict = {tipo: '' for tipo in tipos_documento_ordenados}
+
+                    # Verificar y completar el diccionario con valores reales desde los documentos obtenidos
+                    for tipo in tipos_documento_list:
+                        if tipo in tipos_documento_dict:
+                            tipos_documento_dict[tipo] = tipo
+
+                    # Convertir el diccionario a una lista siguiendo el orden deseado
+                    tipos_documento_list_sorted = [tipos_documento_dict[tipo] for tipo in tipos_documento_ordenados]
 
                     admision_dict = {
                         'Consecutivo': admision_id,
-                        'TiposDeDocumento': tipos_documento_list,
+                        'FechaCreacionAntares': fecha_creacion_antares_str,
+                        'CodigoEntidad': codigo_entidad,
+                        'TiposDeDocumento': tipos_documento_list_sorted,
                     }
                     admisiones_list.append(admision_dict)
 
@@ -2188,6 +2413,7 @@ class AdmisionesConTiposDeDocumento(APIView):
                     "data": admisiones_list
                 }
                 return JsonResponse(response_data)
+
             except Exception as e:
                 response_data = {
                     "success": False,
@@ -2196,14 +2422,16 @@ class AdmisionesConTiposDeDocumento(APIView):
                     "data": None
                 }
                 return JsonResponse(response_data, status=500)
+
         else:
             response_data = {
                 "success": False,
-                "detail": "Faltan parámetros: Fecha y/o UsuarioId.",
+                "detail": "Faltan parámetros: FechaInicio, FechaFin y/o UsuarioId.",
                 "cantidad": None,
                 "data": None
             }
             return JsonResponse(response_data, status=400)
+
         
 
 class ActualizarRegimenArchivosView(APIView):
@@ -2619,15 +2847,58 @@ def actualizar_correciones_cm(request):
         print(f"Error al actualizar archivos: {str(e)}")
         return JsonResponse({"success": False, "detail": str(e)}, status=500)
 
+########## ENVIAR A TESORERIA ADMISIONES QUE AFECTAN CAJA##############
+logger = logging.getLogger(__name__)
 
+@api_view(['POST'])
+def idrevisor_tesoreria(request):
+    data = request.data
+    admision_id = data.get('admision_id')
+    user_id = data.get('user_id')
+
+    print(f"Datos recibidos: admision_id={admision_id}, user_id={user_id}")
+
+    try:
+        with transaction.atomic():
+            archivos = ArchivoFacturacion.objects.filter(Admision_id=admision_id)
+            if not archivos.exists():
+                print(f"No se encontraron archivos para la admisión {admision_id}")
+                return JsonResponse({"success": False, "detail": "Archivo no encontrado"}, status=404)
+
+            for archivo in archivos:
+                print(f"Procesando archivo con IdArchivo: {archivo.IdArchivo}")
+
+                # Asignar IdRevisor basado en user_id
+                archivo.IdRevisorTesoreria = user_id
+                print(f"Asignado user_id: {user_id} a IdRevisorTesoreria")
+
+                # Actualizar los campos de modificado
+                if archivo.Modificado1 is None:
+                    archivo.Modificado1 = 1
+                    print("Modificado1 actualizado a 1")
+                elif archivo.Modificado1 == 1 and archivo.Modificado2 is None:
+                    archivo.Modificado2 = 1
+                    print("Modificado2 actualizado a 1")
+                elif archivo.Modificado2 == 1 and archivo.Modificado3 is None:
+                    archivo.Modificado3 = 1
+                    print("Modificado3 actualizado a 1")
+
+                archivo.save()
+                print(f"Archivo guardado con IdArchivo: {archivo.IdArchivo}, Modificado1: {archivo.Modificado1}, Modificado2: {archivo.Modificado2}, Modificado3: {archivo.Modificado3}, IdRevisorTesoreria: {archivo.IdRevisorTesoreria}")
+
+            return JsonResponse({"success": True, "detail": "Archivos actualizados correctamente"})
+
+    except Exception as e:
+        print(f"Error al actualizar archivos: {str(e)}")
+        return JsonResponse({"success": False, "detail": str(e)}, status=500)
 
 ##### TRAE LAS ADMISIONES QUE HAN SIDO REVISDAS POR CM Y SON ENVIADAS A TESORERIA
-
-
+@api_view(['GET'])
+@permission_classes([AllowAny])
 def admisiones_revision_para_cm(request, id_revisor):
     try:
         # Filtrar registros de ArchivoFacturacion para el revisor dado
-        archivos = ArchivoFacturacion.objects.filter(IdRevisor=id_revisor)
+        archivos = ArchivoFacturacion.objects.filter(IdRevisorTesoreria=id_revisor)
 
         # Obtener los Ids de las admisiones con los archivos filtrados
         admisiones_ids = archivos.values_list('Admision_id', flat=True).distinct()
@@ -2640,14 +2911,9 @@ def admisiones_revision_para_cm(request, id_revisor):
         admisiones_data = []
         with connections['datosipsndx'].cursor() as cursor:
             for auditoria in admisiones_con_revisor:
-                # Verificar si hay algún archivo asociado con RevisionPrimera=True y RevisionSegunda=False
-                archivos_admision = ArchivoFacturacion.objects.filter(Admision_id=auditoria.AdmisionId)
-                if not archivos_admision.filter(RevisionPrimera=True, RevisionSegunda=False).exists():
-                    continue
-
-                # Obtener datos de la admisión
+                # Obtener datos de la admisión, incluyendo FechaCreado
                 query_admision = '''
-                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo
+                    SELECT Consecutivo, IdPaciente, CodigoEntidad, NombreResponsable, FacturaNo, FechaCreado
                     FROM admisiones
                     WHERE Consecutivo = %s
                 '''
@@ -2664,12 +2930,52 @@ def admisiones_revision_para_cm(request, id_revisor):
                     numero_factura = admision_data[4] if len(admision_data) > 4 else ''
                     factura_completa = f"{prefijo}{numero_factura}"
 
+                    # Formatear la FechaCreado para enviar solo año-mes-día
+                    fecha_creado = admision_data[5].strftime('%Y-%m-%d') if admision_data[5] else None
+
+                    # Obtener observaciones con archivos relacionados a la admisión
+                    observaciones_archivos = ObservacionesArchivos.objects.filter(
+                        IdArchivo__Admision_id=auditoria.AdmisionId
+                    ).select_related('IdArchivo')
+
+                    # Obtener observaciones sin archivos relacionadas a la admisión
+                    observaciones_sin_archivo = ObservacionSinArchivo.objects.filter(
+                        AdmisionId=auditoria.AdmisionId
+                    ).select_related('Usuario')
+
+                    # Listar las observaciones con archivos
+                    observaciones_archivo_list = list(observaciones_archivos.values('IdObservacion', 'Descripcion', 'FechaObservacion'))
+
+                    # Listar las observaciones sin archivos
+                    observaciones_sin_archivo_list = list(observaciones_sin_archivo.values('id', 'Descripcion', 'FechaObservacion'))
+
+                    # Obtener los nombres de los usuarios asociados a las observaciones
+                    usuarios_con_observacion_archivo_ids = set(
+                        observaciones_archivos.values_list('IdArchivo__Usuario_id', flat=True).distinct()
+                    )
+
+                    usuarios_con_observacion_sin_archivo_ids = set(
+                        observaciones_sin_archivo.values_list('Usuario_id', flat=True).distinct()
+                    )
+
+                    # Combinar todos los usuarios que tienen observaciones
+                    usuario_ids = list(usuarios_con_observacion_archivo_ids.union(usuarios_con_observacion_sin_archivo_ids))
+
+                    # Consultar los nombres de los usuarios basados en los IDs
+                    usuarios = CustomUser.objects.filter(id__in=usuario_ids).values_list('nombre', flat=True) 
+                    usuarios_list = list(usuarios)  # Convertir QuerySet a lista
+
+                    # Añadir los datos y observaciones al diccionario de respuesta
                     transformed_data = {
                         'Consecutivo': admision_data[0],
                         'IdPaciente': admision_data[1],
                         'CodigoEntidad': admision_data[2],
                         'NombreResponsable': admision_data[3],
                         'FacturaNo': factura_completa,
+                        'FechaCreado': fecha_creado,  # Formatear FechaCreado a año-mes-día
+                        'Usuarios': usuarios_list,
+                        'ObservacionesArchivos': observaciones_archivo_list,
+                        'ObservacionesSinArchivos': observaciones_sin_archivo_list
                     }
                     admisiones_data.append(transformed_data)
 
@@ -2689,6 +2995,39 @@ def admisiones_revision_para_cm(request, id_revisor):
         }
 
         return JsonResponse(response_data, status=404)
+
+    except Exception as e:
+        response_data = {
+            "success": False,
+            "detail": "Error interno del servidor",
+            "error_details": str(e)
+        }
+
+        return JsonResponse(response_data, status=500)
+#####
+
+@api_view(['POST'])
+def quitar_revisor_admision(request, numero_admision):
+    try:
+        # Filtrar registros de la admisión en la tabla ArchivoFacturacion
+        archivos_a_modificar = ArchivoFacturacion.objects.filter(Admision_id=numero_admision)
+
+        # Verificar si existen registros con ese número de admisión y un revisor asignado
+        if not archivos_a_modificar.exists():
+            return JsonResponse(
+                {"success": False, "detail": f"No se encontraron registros para la admisión con número {numero_admision}."},
+                status=404
+            )
+
+        # Actualizar el campo IdRevisor a 0 para desasociar del revisor actual
+        archivos_a_modificar.update(IdRevisorTesoreria=0)
+
+        response_data = {
+            "success": True,
+            "detail": f"El revisor ha sido desasociado de la admisión con número {numero_admision}."
+        }
+
+        return JsonResponse(response_data, status=200)
 
     except Exception as e:
         response_data = {

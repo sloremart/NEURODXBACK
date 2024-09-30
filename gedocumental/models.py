@@ -31,6 +31,7 @@ class ArchivoFacturacion(models.Model):
     Modificado2 = models.BooleanField(null=True, blank=True)
     Modificado3 = models.BooleanField(null=True, blank=True)
     IdRevisor = models.IntegerField(null=True, blank=True)
+    IdRevisorTesoreria = models.IntegerField(null=True, blank=True)
     FechaRevisionPrimera = models.DateField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
@@ -132,5 +133,19 @@ class ObservacionSinArchivo(models.Model):
     def __str__(self):
         return f'Observación {self.id} para la admisión {self.AdmisionId}'
 
+from django.db import models
 
+class OrdenMedica(models.Model):
+    OrdenHis = models.CharField(max_length=20, unique=True)
+    NombreUsuario = models.CharField(max_length=100)
+    ApellidoUsuario = models.CharField(max_length=100)
+    Documento = models.CharField(max_length=20)
+    TipoDocumento = models.CharField(max_length=5)
+    Observaciones = models.TextField()
+    FechaServicio = models.DateField()
+    NombreProfesional = models.CharField(max_length=100)
+    NombreServicio = models.CharField(max_length=100)
+    IdentificacionProfesional = models.CharField(max_length=20)
 
+    def __str__(self):
+        return self.OrdenHis

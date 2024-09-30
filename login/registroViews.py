@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-
+from django_filters.rest_framework import DjangoFilterBackend
 from .models import CustomUser
 from .serializer import LoginSerializer, UserSerializer
 
@@ -60,3 +60,5 @@ class LoginView(APIView):
 class CustomUserListView(generics.ListAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = UserSerializer
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['cargo'] 
